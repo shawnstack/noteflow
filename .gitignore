@@ -1,0 +1,17 @@
+# 依赖与构建产物
+node_modules/
+dist/
+tsconfig.tsbuildinfo
+
+# 系统文件
+.DS_Store
+
+# 日志
+*.log
+
+# 本地环境
+.env
+.env.*
+
+# 笔记回收站（内容可恢复，不入库）
+notes/.trash/

@@ -1,0 +1,201 @@
+import type { AiTurnArtifact } from '@/lib/tool-artifacts'
+
+export type ArtifactKind = 'html' | 'image' | 'markdown' | 'code' | 'pdf' | 'docx' | 'excel' | 'unknown'
+export type DocumentFormat = 'pdf' | 'docx' | 'excel'
+
+type PresentedArtifact = {
+  id: string
+  path: string
+  title?: string
+  description?: string
+  kind: ArtifactKind
+  preview: boolean
+  defaultPreview: boolean
+  explicit: boolean
+  addedLines?: number
+  removedLines?: number
+  sources: AiTurnArtifact['source'][]
+  toolCallIds: string[]
+}
+
+export function artifactFileName(path: string) {
+  const normalized = path.replace(/\\/g, '/')
+  return normalized.split('/').filter(Boolean).pop() || normalized || 'artifact'
+}
+
+export function inferArtifactKind(path: string): ArtifactKind {
+  const lower = path.toLowerCase()
+  const fileName = lower.replace(/\\/g, '/').split('/').pop() || lower
+  if (lower.endsWith('.html') || lower.endsWith('.htm')) return 'html'
+  if (lower.endsWith('.pdf')) return 'pdf'
+  if (lower.endsWith('.docx')) return 'docx'
+  if (/\.(xls|xlsx)$/i.test(lower)) return 'excel'
+  if (/\.(svg|png|jpe?g|webp|gif|ico)$/i.test(lower)) return 'image'
+  if (/\.(md|mdx|markdown)$/i.test(lower)) return 'markdown'
+  if (fileName === 'dockerfile' || fileName.endsWith('.dockerfile') || fileName === 'makefile') return 'code'
+  if (/\.(ts|tsx|js|jsx|mjs|cjs|css|scss|less|json|jsonc|txt|csv|tsv|log|sql|xml|yml|yaml|toml|ini|py|rb|go|rs|java|swift|kt|kts|c|h|cpp|hpp|cs|php|sh|bash|zsh|ps1)$/i.test(lower)) return 'code'
+  return 'unknown'
+}
+
+export function documentFormatFromPath(path: string): DocumentFormat | undefined {
+  const kind = inferArtifactKind(path)
+  if (kind === 'pdf' || kind === 'docx' || kind === 'excel') return kind
+  return undefined
+}
+
+export function isDocumentPreviewablePath(path: string) {
+  return documentFormatFromPath(path) !== undefined
+}
+
+// 「可自动展示」的文件类型：所有已有 Browser/Reader 类型，以及本期支持的文档类型。
+// Browser、Reader 与 Document 的具体分流由 artifactPreviewMode 统一决定。
+export function isPreviewablePath(path: string) {
+  const kind = inferArtifactKind(path)
+  return kind !== 'unknown'
+}
+
+// Browser iframe 仅支持 HTML 与可直接显示的图片类型。
+// 与 server 的 PREVIEW_ALLOWED_EXTENSIONS 图片子集对齐（不含 .bmp）。
+const BROWSER_PREVIEWABLE_IMAGE_RE = /\.(svg|png|jpe?g|webp|gif|ico)$/i
+
+export function isBrowserPreviewablePath(path: string) {
+  return inferArtifactKind(path) === 'html' || BROWSER_PREVIEWABLE_IMAGE_RE.test(path)
+}
+
+export function artifactPreviewMode(path: string, kind: ArtifactKind = inferArtifactKind(path)): 'browser' | 'reader' | 'document' | undefined {
+  if (kind === 'markdown' || kind === 'code') return 'reader'
+  if (kind === 'pdf' || kind === 'docx' || kind === 'excel') return 'document'
+  if ((kind === 'html' || kind === 'image') && isBrowserPreviewablePath(path)) return 'browser'
+  return undefined
+}
+
+export function workspaceArtifactDiskPath(workspaceRoot: string | undefined, artifactPath: string) {
+  const normalizedArtifactPath = artifactPath.replace(/\\/g, '/')
+  if (!workspaceRoot?.trim() || normalizedArtifactPath.startsWith('/') || /^[a-zA-Z]:\//.test(normalizedArtifactPath)) return artifactPath
+
+  const normalizedRoot = workspaceRoot.trim().replace(/\\/g, '/').replace(/\/+$/, '')
+  const relativePath = normalizedArtifactPath.replace(/^\/+/, '')
+  return `${normalizedRoot}/${relativePath}`
+}
+
+export function workspacePreviewUrl(projectId: string, path: string, reloadToken?: number) {
+  const normalizedPath = path.replace(/\\/g, '/')
+  const leadingSlashes = normalizedPath.match(/^\/+/)?.[0] ?? ''
+  const encodedPath = leadingSlashes + normalizedPath
+    .slice(leadingSlashes.length)
+    .split('/')
+    .filter(Boolean)
+    .map((part) => encodeURIComponent(part))
+    .join('/')
+  const base = `/api/workspace/preview/${encodeURIComponent(projectId)}/${encodedPath}`
+  return reloadToken ? `${base}?r=${reloadToken}` : base
+}
+
+export function artifactPathKey(path: string) {
+  return path.replace(/\\/g, '/').toLowerCase()
+}
+
+function artifactSortScore(artifact: PresentedArtifact) {
+  const fileName = artifactFileName(artifact.path).toLowerCase()
+  if (artifact.defaultPreview) return 0
+  if (artifact.explicit && artifact.preview) return 1
+  if (artifact.explicit) return 2
+  if (fileName === 'index.html') return 3
+  if (artifact.kind === 'html') return 4
+  if (artifact.kind === 'image') return 5
+  if (artifact.kind === 'pdf' || artifact.kind === 'docx' || artifact.kind === 'excel') return 6
+  if (artifact.kind === 'markdown') return 7
+  if (artifact.kind === 'code') return 8
+  return 20
+}
+
+export function presentArtifacts(artifacts: AiTurnArtifact[]): PresentedArtifact[] {
+  const byPath = new Map<string, PresentedArtifact>()
+
+  for (const artifact of artifacts) {
+    if (!artifact.path) continue
+    const key = artifactPathKey(artifact.path)
+    const kind = (artifact.kind ?? inferArtifactKind(artifact.path)) as ArtifactKind
+    const existing = byPath.get(key)
+    const preview = artifact.preview ?? isPreviewablePath(artifact.path)
+    const explicit = artifact.source === 'present_files' || artifact.presentation === 'explicit'
+
+    if (!existing) {
+      byPath.set(key, {
+        id: key,
+        path: artifact.path,
+        title: artifact.title,
+        description: artifact.description,
+        kind,
+        preview,
+        defaultPreview: Boolean(artifact.defaultPreview),
+        explicit,
+        addedLines: artifact.addedLines,
+        removedLines: artifact.removedLines,
+        sources: [artifact.source],
+        toolCallIds: artifact.toolCallId ? [artifact.toolCallId] : [],
+      })
+      continue
+    }
+
+    existing.preview = existing.preview || preview
+    existing.defaultPreview = existing.defaultPreview || Boolean(artifact.defaultPreview)
+    existing.explicit = existing.explicit || explicit
+    existing.title = artifact.title || existing.title
+    existing.description = artifact.description || existing.description
+    if (typeof artifact.addedLines === 'number') existing.addedLines = (existing.addedLines ?? 0) + artifact.addedLines
+    if (typeof artifact.removedLines === 'number') existing.removedLines = (existing.removedLines ?? 0) + artifact.removedLines
+    existing.kind = existing.kind === 'unknown' ? kind : existing.kind
+    if (!existing.sources.includes(artifact.source)) existing.sources.push(artifact.source)
+    if (artifact.toolCallId && !existing.toolCallIds.includes(artifact.toolCallId)) existing.toolCallIds.push(artifact.toolCallId)
+  }
+
+  return [...byPath.values()].sort((left, right) => artifactSortScore(left) - artifactSortScore(right))
+}
+
+// 自动预览候选：仅 present_files（explicit）来源且 preview=true 的 artifact 才自动打开。
+// write_file/edit_file（inferred）产物仍会进入侧栏产物列表（presentArtifacts）供手动查看，但不自动弹 tab。
+// 渲染路径由调用方（App.tsx 自动预览副作用）按 kind 决定：
+//   html/image → browser iframe；markdown/code → Reader；PDF/DOCX/XLS/XLSX → Document。
+// 注意：按「最近一次工具调用」选取 —— 原始 artifacts 数组按时序排列，取最后一个满足条件的，
+// 避免旧的同分 artifact（如 README.md）永远排在前面、挡住新 present 的文件。
+export function findBestPreviewableArtifact(artifacts: AiTurnArtifact[]): PresentedArtifact | undefined {
+  const candidates = presentArtifacts(artifacts).filter((artifact) => artifact.preview && artifact.explicit)
+  if (candidates.length <= 1) return candidates[0]
+  // 多个候选时，按各自最新的 toolCallId 在原始 artifacts 中的出现位置排序，取最新的。
+  // toolCallId 出现越靠后 = 越新的工具调用，应优先自动预览。
+  const orderOfToolCall = new Map<string, number>()
+  for (let i = 0; i < artifacts.length; i++) {
+    const tcid = artifacts[i]?.toolCallId
+    if (tcid) orderOfToolCall.set(tcid, i)
+  }
+  const latestIndex = (artifact: PresentedArtifact): number => {
+    const ids = artifact.toolCallIds
+    let max = -1
+    for (const id of ids) {
+      const pos = orderOfToolCall.get(id)
+      if (typeof pos === 'number' && pos > max) max = pos
+    }
+    return max
+  }
+  return [...candidates].sort((a, b) => latestIndex(b) - latestIndex(a))[0]
+}
+
+// 收集消息中全部 toolResult 的 toolCallId，用于构建「附着时刻历史快照」：
+// 自动预览据此区分恢复会话时已有的历史 present_files 与 agent 附着后新发生的 present。
+export function collectToolResultToolCallIds(messages: Iterable<{ role?: string; toolCallId?: unknown }>): Set<string> {
+  const ids = new Set<string>()
+  for (const message of messages) {
+    if (message.role !== 'toolResult') continue
+    if (typeof message.toolCallId !== 'string' || message.toolCallId.length === 0) continue
+    ids.add(message.toolCallId)
+  }
+  return ids
+}
+
+// 判断产物是否包含历史快照之外的新 toolCallId：仅「附着后新发生」的 present 允许自动预览；
+// toolCallIds 缺失或为空时保守返回 false（不弹），避免无法判定来源时打扰用户。
+export function isNewlyPresentedArtifact(toolCallIds: readonly string[] | undefined, historyToolCallIds: ReadonlySet<string>): boolean {
+  if (!toolCallIds || toolCallIds.length === 0) return false
+  return toolCallIds.some((id) => !historyToolCallIds.has(id))
+}
