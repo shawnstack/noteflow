@@ -105,8 +105,7 @@ npm run electron:start   # 直接以 Electron 运行（复用 dist）
 npm run electron:build   # 打包 dmg（release/NoteFlow-<版本>-arm64.dmg，mac arm64）
 ```
 
-模型配置存于 `~/.noteflow`（与桌面版 `~/.quickforge` 完全隔离，互不干扰），
-可在应用内「模型设置」添加（任一 OpenAI 兼容服务商）。
+模型配置存于 `~/.noteflow`，可在应用内「模型设置」添加（任一 OpenAI 兼容服务商）。
 
 ## Electron 桌面端（v0.5）
 
