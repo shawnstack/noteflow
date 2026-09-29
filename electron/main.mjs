@@ -18,6 +18,7 @@
  */
 import { app, BrowserWindow, Menu, dialog, shell } from 'electron'
 import { join, resolve } from 'node:path'
+import { existsSync } from 'node:fs'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url))
@@ -101,6 +102,8 @@ function createWindow() {
     minHeight: 640,
     backgroundColor: '#09090b',
     title: 'NoteFlow',
+    // 任务栏/窗口图标（win/linux 开发模式有意义；mac 由 icns 接管，生产由打包注入）
+    ...(existsSync(join(ROOT, 'build/icon.png')) ? { icon: join(ROOT, 'build/icon.png') } : {}),
     show: false,
     webPreferences: {
       // 纯 web 页面加载，不注入 node；contextIsolation/sandbox 保持默认开启

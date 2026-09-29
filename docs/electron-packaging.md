@@ -73,7 +73,7 @@ appId: app.noteflow.desktop
 productName: NoteFlow
 directories:
   output: release          # 产物输出目录（已 gitignore）
-  buildResources: build    # 图标等资源（build/icon.png 512×512，自动生成 icns）
+  buildResources: build    # 图标等资源（源文件 build/icon.svg，与 web favicon 同设计）
 files:                     # 进包内容（其余不进，见 §3.2 依赖归位）
   - electron/**
   - server-core.mjs
@@ -83,13 +83,20 @@ files:                     # 进包内容（其余不进，见 §3.2 依赖归�
 asar: false                # 关键，见 §3.1
 mac:
   category: public.app-category.productivity
-  icon: build/icon.png
+  icon: build/icon.icns    # 824/1024 留白 squircle（icon-mac.svg 生成）
   target:
     - target: dmg
       arch: [arm64]
+win:
+  icon: build/icon.ico     # 16-256 七档；mac 交叉打包 NSIS 需 wine
+linux:
+  category: Office
+  icon: build/icons        # hicolor 16-512 九档
 electronDownload:
   mirror: https://npmmirror.com/mirrors/electron/   # 打包机重下 Electron 时的镜像
 ```
+
+图标源与重生成：`build/icon.svg`（全出血，与 web favicon 同设计）+ `build/icon-mac.svg`（Apple 留白版），改完后执行 `bash build/gen-icons.sh` 一键重生成 icon.png / icon.icns / icon.ico / icons/。
 
 ### 3.1 为什么 `asar: false`
 

@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- NoteFlow 应用图标源文件，与 index.html 内联 favicon 同设计：
+       zinc-900 圆角方块 + Georgia 衬线 N（zinc-400）。
+       由 build/gen-icons.sh 重新生成各平台图标，改这里即可。 -->
+  <rect width="1024" height="1024" rx="205" fill="#18181b"/>
+  <text x="512" y="717" font-size="594" text-anchor="middle" fill="#a1a1aa" font-family="Georgia, 'Times New Roman', serif">N</text>
+</svg>

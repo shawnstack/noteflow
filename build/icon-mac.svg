@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- macOS 版：Apple 图标模板规范——图形占 824/1024 居中，四周留透明边距，
+       否则 Dock 里会比其他 App 显得大一号。内容与 icon.svg 完全一致。 -->
+  <svg x="100" y="100" width="824" height="824" viewBox="0 0 1024 1024">
+    <rect width="1024" height="1024" rx="205" fill="#18181b"/>
+    <text x="512" y="717" font-size="594" text-anchor="middle" fill="#a1a1aa" font-family="Georgia, 'Times New Roman', serif">N</text>
+  </svg>
+</svg>

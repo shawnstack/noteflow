@@ -18,10 +18,18 @@ files:
 asar: false
 mac:
   category: public.app-category.productivity
-  icon: build/icon.png
+  icon: build/icon.icns
   target:
     - target: dmg
       arch:
         - arm64
+# Windows：图标已备好（build/icon.ico）；在 mac 上交叉打包 NSIS 需要 wine，
+# 需要时执行 `electron-builder --win nsis --x64`。
+win:
+  icon: build/icon.ico
+# Linux：hicolor 尺寸集在 build/icons/（16-512 九档）。
+linux:
+  category: Office
+  icon: build/icons
 electronDownload:
   mirror: https://npmmirror.com/mirrors/electron/
