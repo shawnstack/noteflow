@@ -27,6 +27,10 @@ type WorkspaceFileTreeProps = {
   onPreviewFile?: (path: string) => void
   /** 当前项目 id；提供时图片行展示真实缩略图，否则回退为类型图标。 */
   projectId?: string
+  /** 行拖拽开始（文件树拖拽移动；NoteFlow 宿主层捕获） */
+  onNodeDragStart?: (path: string, event: React.DragEvent) => void
+  /** 拖拽悬停目标目录高亮（'.' 表示根） */
+  dropTargetPath?: string | null
 }
 
 function statusLabel(file?: GitChangedFile) {
@@ -77,8 +81,10 @@ function WorkspaceTreeRows({ entries, depth, props }: {
       <div key={node.path}>
         <button
           type="button"
+          draggable
+          onDragStart={(event) => props.onNodeDragStart?.(node.path, event)}
           className={`group flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-sm transition-colors ${
-            isSelected ? '' : ''
+            props.dropTargetPath === node.path ? 'ring-1 ring-inset ring-primary bg-primary/10' : isSelected ? '' : ''
           }`}
           style={{ paddingLeft: `${0.5 + depth * 0.75}rem` }}
           onClick={() => {

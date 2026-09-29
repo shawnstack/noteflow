@@ -9,7 +9,7 @@ import 'highlight.js/styles/github-dark.css'
 
 export function Markdown({ children }: { children: string }) {
   return (
-    <div className="prose prose-invert prose-zinc max-w-none prose-pre:bg-zinc-900 prose-pre:border prose-pre:border-zinc-800 prose-code:before:content-none prose-code:after:content-none prose-headings:border-none prose-th:text-left prose-p:leading-6">
+    <div className="prose prose-zinc dark:prose-invert max-w-none prose-pre:bg-muted prose-pre:border prose-pre:border-border prose-code:before:content-none prose-code:after:content-none prose-headings:border-none prose-th:text-left prose-p:leading-6 dark:prose-pre:bg-zinc-900 dark:prose-pre:border-zinc-800">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         rehypePlugins={[
@@ -50,9 +50,9 @@ function PreBlock({ children }: { children?: ReactNode }) {
         type="button"
         onClick={() => void copy()}
         title="复制代码"
-        className="absolute right-2 top-2 rounded border border-zinc-700 bg-zinc-800/90 p-1.5 text-zinc-400 opacity-0 transition-opacity hover:text-zinc-200 group-hover:opacity-100"
+        className="absolute right-2 top-2 rounded border border-border bg-card/90 p-1.5 text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100"
       >
-        {copied ? <Check className="size-3.5 text-emerald-400" /> : <Copy className="size-3.5" />}
+        {copied ? <Check className="size-3.5 text-emerald-600 dark:text-emerald-400" /> : <Copy className="size-3.5" />}
       </button>
     </div>
   )

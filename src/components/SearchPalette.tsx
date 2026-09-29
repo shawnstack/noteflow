@@ -19,7 +19,9 @@ export function SearchPalette({ open, projectId, onClose, onSelect }: Props) {
   const [matches, setMatches] = useState<GrepMatch[]>([])
   const [loading, setLoading] = useState(false)
   const [searched, setSearched] = useState(false)
+  const [selectedIndex, setSelectedIndex] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
+  const listRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (open) {
@@ -30,6 +32,7 @@ export function SearchPalette({ open, projectId, onClose, onSelect }: Props) {
       setMatches([])
       setSearched(false)
       setMode('files')
+      setSelectedIndex(0)
     }
   }, [open])
 
@@ -41,10 +44,12 @@ export function SearchPalette({ open, projectId, onClose, onSelect }: Props) {
       setFiles([])
       setMatches([])
       setSearched(false)
+      setSelectedIndex(0)
       return
     }
     setLoading(true)
     setSearched(false)
+    setSelectedIndex(0)
     const timer = window.setTimeout(async () => {
       try {
         if (mode === 'files') {
@@ -63,12 +68,29 @@ export function SearchPalette({ open, projectId, onClose, onSelect }: Props) {
     return () => window.clearTimeout(timer)
   }, [open, query, mode, projectId])
 
-  if (!open) return null
+  // 结果总数（键盘导航范围）
+  const total = mode === 'files' ? files.length : matches.length
 
-  const pick = (path: string) => {
-    onSelect(path)
-    onClose()
+  const pathAt = (index: number): string | null => {
+    if (mode === 'files') return files[index]?.type === 'file' ? files[index].path : files[index]?.path ?? null
+    return matches[index]?.path ?? null
   }
+
+  const pickIndex = (index: number) => {
+    const path = pathAt(index)
+    if (path) {
+      onSelect(path)
+      onClose()
+    }
+  }
+
+  // 选中项滚动到可视区
+  useEffect(() => {
+    const el = listRef.current?.querySelector<HTMLElement>(`[data-index="${selectedIndex}"]`)
+    el?.scrollIntoView({ block: 'nearest' })
+  }, [selectedIndex])
+
+  if (!open) return null
 
   return (
     <div
@@ -86,9 +108,18 @@ export function SearchPalette({ open, projectId, onClose, onSelect }: Props) {
             onChange={(event) => setQuery(event.target.value)}
             onKeyDown={(event) => {
               if (event.key === 'Escape') onClose()
-              if (event.key === 'Enter') {
-                if (mode === 'files' && files[0]) pick(files[0].type === 'file' ? files[0].path : files[0].path)
-                if (mode === 'content' && matches[0]) pick(matches[0].path)
+              if (event.key === 'ArrowDown' || (event.key === 'n' && event.ctrlKey)) {
+                if (total > 0) {
+                  event.preventDefault()
+                  setSelectedIndex((index) => (index + 1) % total)
+                }
+              } else if (event.key === 'ArrowUp' || (event.key === 'p' && event.ctrlKey)) {
+                if (total > 0) {
+                  event.preventDefault()
+                  setSelectedIndex((index) => (index - 1 + total) % total)
+                }
+              } else if (event.key === 'Enter') {
+                pickIndex(selectedIndex)
               }
             }}
             placeholder={mode === 'files' ? '搜索文件名…（≥2 字符）' : '全文搜索内容…（≥2 字符）'}
@@ -114,25 +145,26 @@ export function SearchPalette({ open, projectId, onClose, onSelect }: Props) {
           </div>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto p-2">
+        <div className="min-h-0 flex-1 overflow-y-auto p-2" ref={listRef}>
           {loading && <p className="px-3 py-2 text-xs text-muted-foreground">搜索中…</p>}
           {!loading && query.trim().length < 2 && (
-            <p className="px-3 py-6 text-center text-xs text-muted-foreground/70">输入至少 2 个字符开始搜索 · Enter 打开第一条 · Esc 关闭</p>
+            <p className="px-3 py-6 text-center text-xs text-muted-foreground/70">输入至少 2 个字符开始搜索 · ↑↓ 选择 · Enter 打开 · Esc 关闭</p>
           )}
-          {!loading && searched && query.trim().length >= 2 && mode === 'files' && files.length === 0 && (
-            <p className="px-3 py-6 text-center text-xs text-muted-foreground/70">没有匹配的文件</p>
-          )}
-          {!loading && searched && query.trim().length >= 2 && mode === 'content' && matches.length === 0 && (
-            <p className="px-3 py-6 text-center text-xs text-muted-foreground/70">没有匹配的内容</p>
+          {!loading && searched && query.trim().length >= 2 && total === 0 && (
+            <p className="px-3 py-6 text-center text-xs text-muted-foreground/70">没有匹配的{mode === 'files' ? '文件' : '内容'}</p>
           )}
           {!loading &&
             mode === 'files' &&
-            files.map((entry) => (
+            files.map((entry, index) => (
               <button
                 key={entry.path}
                 type="button"
-                onClick={() => pick(entry.path)}
-                className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-[13px] text-foreground hover:bg-muted"
+                data-index={index}
+                onClick={() => pickIndex(index)}
+                onMouseEnter={() => setSelectedIndex(index)}
+                className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-[13px] ${
+                  index === selectedIndex ? 'bg-accent text-foreground' : 'text-foreground hover:bg-muted'
+                }`}
               >
                 <FileText className="size-4 shrink-0 text-muted-foreground" />
                 <span className="truncate">{entry.path}</span>
@@ -144,8 +176,10 @@ export function SearchPalette({ open, projectId, onClose, onSelect }: Props) {
               <button
                 key={`${match.path}-${match.line}-${index}`}
                 type="button"
-                onClick={() => pick(match.path)}
-                className="flex w-full flex-col gap-0.5 rounded-lg px-3 py-2 text-left hover:bg-muted"
+                data-index={index}
+                onClick={() => pickIndex(index)}
+                onMouseEnter={() => setSelectedIndex(index)}
+                className={`flex w-full flex-col gap-0.5 rounded-lg px-3 py-2 text-left ${index === selectedIndex ? 'bg-accent' : 'hover:bg-muted'}`}
               >
                 <span className="flex items-center gap-2 text-[12px] text-muted-foreground">
                   <FileText className="size-3.5 shrink-0 text-muted-foreground" />

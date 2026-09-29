@@ -1,8 +1,9 @@
 {
   "name": "noteflow",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "type": "module",
+  "main": "electron/main.mjs",
   "description": "NoteFlow —— 三栏 AI 笔记应用：左侧文件管理、中间文本阅读/编辑、右侧 AI 对话。基于 QuickForge 基础能力构建。",
   "engines": {
     "node": ">=22.19.0"
@@ -10,17 +11,29 @@
   "scripts": {
     "dev": "node scripts/dev.mjs",
     "dev:web": "vite",
+    "dev:electron": "node scripts/dev-electron.mjs",
     "build": "tsc -b && vite build",
-    "start": "node server.mjs",
+    "start": "node server.mjs --serve-static",
+    "electron:start": "electron .",
+    "electron:build": "npm run build && electron-builder --mac",
     "typecheck": "tsc -b"
   },
   "dependencies": {
+    "@shawnstack/quickforge": "^2.2.0"
+  },
+  "devDependencies": {
     "@earendil-works/pi-agent-core": "^0.80.3",
     "@earendil-works/pi-ai": "^0.80.3",
-    "@shawnstack/quickforge": "^2.2.0",
+    "@tailwindcss/typography": "^0.5.15",
+    "@tailwindcss/vite": "^4.2.4",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "docx-preview": "^0.4.1",
+    "electron": "^44.4.5",
+    "electron-builder": "^26.15.3",
     "highlight.js": "^11.12.0",
     "jszip": "^3.10.2",
     "katex": "^0.18.9",
@@ -34,16 +47,12 @@
     "rehype-katex": "^7.0.1",
     "remark-gfm": "^4.0.1",
     "tailwind-merge": "^3.7.0",
-    "xlsx": "^0.18.5"
-  },
-  "devDependencies": {
-    "@tailwindcss/typography": "^0.5.15",
-    "@tailwindcss/vite": "^4.2.4",
-    "@types/react": "^19.2.14",
-    "@types/react-dom": "^19.2.3",
-    "@vitejs/plugin-react": "^6.0.1",
     "tailwindcss": "^4.2.4",
     "typescript": "~6.0.2",
-    "vite": "^8.0.10"
+    "vite": "^8.0.10",
+    "xlsx": "^0.18.5"
+  },
+  "allowScripts": {
+    "electron@44.4.5": true
   }
 }

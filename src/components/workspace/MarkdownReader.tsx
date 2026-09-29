@@ -6,6 +6,7 @@ import { isShellCodeLanguage } from '@/components/chat/surface/CodeBlock'
 import { MermaidDiagram } from './MermaidDiagram'
 import { CodeBlock } from '@/components/chat/surface'
 import { resolveMarkdownImageSource } from './markdown-resource'
+import { parseNoteLinkHref } from '@/lib/wikilinks'
 
 type MarkdownReaderProps = {
   projectId?: string
@@ -14,6 +15,8 @@ type MarkdownReaderProps = {
   language: string
   mode: MarkdownMode
   wordWrap?: boolean
+  /** 双链点击回调（wiki 链接经 transformWikiLinks 预处理为 noteflow-note: scheme） */
+  onOpenNote?: (target: string, exists: boolean) => void
 }
 
 type MarkdownMode = 'preview' | 'source'
@@ -27,7 +30,7 @@ function codeLanguage(className: string | undefined) {
   return className?.match(/(?:^|\s)language-([^\s]+)/)?.[1]
 }
 
-function createMarkdownComponents(projectId: string | undefined, path: string): Components {
+function createMarkdownComponents(projectId: string | undefined, path: string, onOpenNote?: (target: string, exists: boolean) => void): Components {
   return {
     h1: ({ children }) => <h1 className="mt-8 mb-3 border-b border-border pb-3 text-3xl font-semibold tracking-tight">{children}</h1>,
     h2: ({ children }) => <h2 className="mt-8 mb-3 border-b border-border pb-2 text-2xl font-semibold tracking-tight">{children}</h2>,
@@ -36,16 +39,38 @@ function createMarkdownComponents(projectId: string | undefined, path: string): 
     h5: ({ children }) => <h5 className="mt-8 mb-3 text-base font-semibold">{children}</h5>,
     h6: ({ children }) => <h6 className="mt-8 mb-3 text-base font-semibold">{children}</h6>,
     p: ({ children }) => <p className="my-4">{children}</p>,
-    a: ({ href, children }) => (
-      <a
-        className="text-primary underline-offset-4 hover:underline"
-        href={href}
-        target={href?.startsWith('http') || href?.startsWith('//') ? '_blank' : undefined}
-        rel="noreferrer"
-      >
-        {children}
-      </a>
-    ),
+    a: ({ href, children }) => {
+      const noteLink = href ? parseNoteLinkHref(href) : null
+      if (noteLink) {
+        return (
+          <a
+            className={
+              noteLink.exists
+                ? 'cursor-pointer text-primary underline-offset-4 hover:underline'
+                : 'cursor-pointer text-amber-600 underline decoration-dashed underline-offset-4 hover:text-amber-500 dark:text-amber-400'
+            }
+            href={href}
+            title={noteLink.exists ? `打开笔记：${noteLink.target}` : `创建笔记：${noteLink.target}`}
+            onClick={(event) => {
+              event.preventDefault()
+              onOpenNote?.(noteLink.target, noteLink.exists)
+            }}
+          >
+            {children}
+          </a>
+        )
+      }
+      return (
+        <a
+          className="text-primary underline-offset-4 hover:underline"
+          href={href}
+          target={href?.startsWith('http') || href?.startsWith('//') ? '_blank' : undefined}
+          rel="noreferrer"
+        >
+          {children}
+        </a>
+      )
+    },
     img: ({ src, alt, title }) => {
       const resolvedSource = resolveMarkdownImageSource(projectId, path, src)
       if (!resolvedSource) return alt ? <span className="text-muted-foreground">{alt}</span> : null
@@ -120,8 +145,8 @@ function createMarkdownComponents(projectId: string | undefined, path: string): 
   }
 }
 
-export function MarkdownReader({ projectId, path, content, language, mode }: MarkdownReaderProps) {
-  const components = useMemo(() => createMarkdownComponents(projectId, path), [projectId, path])
+export function MarkdownReader({ projectId, path, content, language, mode, onOpenNote }: MarkdownReaderProps) {
+  const components = useMemo(() => createMarkdownComponents(projectId, path, onOpenNote), [projectId, path, onOpenNote])
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-background">

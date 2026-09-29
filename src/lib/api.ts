@@ -62,11 +62,59 @@ export function shQuote(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`
 }
 
+/* ---------- 图片素材（编辑器粘贴/拖入） ---------- */
+
+/** 上传图片二进制到 notes/assets/<年-月>/，返回相对笔记根的路径（NoteFlow 自有端点，非 quickforge） */
+export async function uploadImageAsset(file: Blob, ext: string): Promise<string> {
+  const dataBase64 = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      const result = String(reader.result || '')
+      const comma = result.indexOf(',')
+      resolve(comma >= 0 ? result.slice(comma + 1) : result)
+    }
+    reader.onerror = () => reject(new Error('读取图片数据失败'))
+    reader.readAsDataURL(file)
+  })
+  const payload = await jsonFetch<{ path: string }>('/api/noteflow/asset', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ ext, dataBase64 }),
+  })
+  return payload.path
+}
+
+/** 计算从笔记所在目录指向素材的相对链接（MarkdownReader 按笔记目录解析相对路径） */
+export function relativeAssetLink(notePath: string, assetPath: string): string {
+  const noteDir = notePath.includes('/') ? notePath.slice(0, notePath.lastIndexOf('/')) : ''
+  const fromParts = noteDir ? noteDir.split('/') : []
+  const toParts = assetPath.split('/')
+  let common = 0
+  while (common < fromParts.length && common < toParts.length - 1 && fromParts[common] === toParts[common]) common++
+  const ups = fromParts.length - common
+  const downs = toParts.slice(common).join('/')
+  return ups === 0 ? downs : `${'../'.repeat(ups)}${downs}`
+}
+
 /** 文件/目录名搜索（≥2 字符，ripgrep --files + 子串匹配） */
 export async function searchFileNames(projectId: string, query: string): Promise<WorkspaceEntry[]> {
   const params = new URLSearchParams({ projectId, query })
   const payload = await jsonFetch<{ entries: WorkspaceEntry[] }>(`/api/workspace/search?${params}`)
   return payload.entries ?? []
+}
+
+/** 列出全部 markdown 笔记路径（双链解析/补全/反向链接用；排除回收站，cwd=notes/） */
+export async function listNotePaths(projectId: string): Promise<string[]> {
+  const payload = (await post(`/api/projects/${encodeURIComponent(projectId)}/tools/run_command`, {
+    command: `find . -type f \\( -name '*.md' -o -name '*.markdown' \\) -not -path './.trash/*' | sed 's|^\\./||' | sort`,
+  })) as { content?: string; error?: string; isError?: boolean }
+  if (payload && (payload.isError || payload.error)) throw new Error(String(payload.error || '列出笔记失败'))
+  const match = /\nSTDOUT[^\n]*:\n([\s\S]*?)\n\nSTDERR/.exec(String(payload?.content ?? ''))
+  const stdout = match ? match[1] : ''
+  return stdout
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
 }
 
 export type GrepMatch = { path: string; line: number | null; text: string }

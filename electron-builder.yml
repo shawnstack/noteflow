@@ -1,0 +1,27 @@
+# NoteFlow Electron 打包配置（electron-builder 26）
+#
+# asar: false 的原因 —— Electron 主进程要 dynamic import 磁盘上的
+# server-core.mjs / node_modules/@shawnstack/quickforge（quickforge 内部
+# 还会按文件路径读取 vendor/node-pty prebuilds），不进 asar 最省心；
+# 本地工具不在乎那点体积差。
+appId: app.noteflow.desktop
+productName: NoteFlow
+directories:
+  output: release
+  buildResources: build
+files:
+  - electron/**
+  - server-core.mjs
+  - asset-endpoint.mjs
+  - dist/**
+  - package.json
+asar: false
+mac:
+  category: public.app-category.productivity
+  icon: build/icon.png
+  target:
+    - target: dmg
+      arch:
+        - arm64
+electronDownload:
+  mirror: https://npmmirror.com/mirrors/electron/

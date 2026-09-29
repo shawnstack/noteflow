@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Bot, Info, Palette, Settings2, SlidersHorizontal, X } from 'lucide-react'
 import { getActiveModel, getModelCatalog, setActiveModel } from '../lib/api'
 import type { ModelLike } from '../lib/types'
+import { getThemePreference, setThemePreference, type ThemePreference } from '../lib/theme'
 import { useToast } from './Toast'
 
 export const PROTECTED_KEY = 'noteflow.chat.protected'
@@ -22,6 +23,7 @@ export function SettingsDialog({ open, onClose, onOpenSetup, notesDir }: Props) 
   const [protectedDefault, setProtectedDefault] = useState(false)
   const [attachNoteDefault, setAttachNoteDefault] = useState(true)
   const [fontSize, setFontSize] = useState(15)
+  const [theme, setTheme] = useState<ThemePreference>('dark')
   const toast = useToast()
 
   useEffect(() => {
@@ -34,6 +36,7 @@ export function SettingsDialog({ open, onClose, onOpenSetup, notesDir }: Props) 
     setProtectedDefault(localStorage.getItem(PROTECTED_KEY) === '1')
     setAttachNoteDefault(localStorage.getItem(ATTACH_NOTE_KEY) !== '0')
     setFontSize(Number(localStorage.getItem(FONT_SIZE_KEY)) || 15)
+    setTheme(getThemePreference())
   }, [open])
 
   const modelGroups = useMemo(
@@ -160,6 +163,32 @@ export function SettingsDialog({ open, onClose, onOpenSetup, notesDir }: Props) 
               外观
             </h3>
             <div className="flex items-center justify-between rounded-lg border border-border bg-background px-3 py-2.5">
+              <span className="text-[13px] text-foreground">主题</span>
+              <div className="flex gap-1">
+                {(
+                  [
+                    ['light', '浅色'],
+                    ['dark', '深色'],
+                    ['system', '跟随系统'],
+                  ] as const
+                ).map(([value, label]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => {
+                      setTheme(value)
+                      setThemePreference(value)
+                    }}
+                    className={`rounded-md border px-2.5 py-1 text-xs ${
+                      theme === value ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="mt-2 flex items-center justify-between rounded-lg border border-border bg-background px-3 py-2.5">
               <span className="text-[13px] text-foreground">消息字号</span>
               <div className="flex gap-1">
                 {[14, 15, 16, 17].map((size) => (

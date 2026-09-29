@@ -1,6 +1,7 @@
 # 依赖与构建产物
 node_modules/
 dist/
+release/
 tsconfig.tsbuildinfo
 
 # 系统文件
@@ -15,3 +16,6 @@ tsconfig.tsbuildinfo
 
 # 笔记回收站（内容可恢复，不入库）
 notes/.trash/
+
+# 笔记内容（notes/ 为独立 git 仓库，由 NoteFlow 版本历史功能管理）
+notes/

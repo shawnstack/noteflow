@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, forwardRef } from 'react'
 import { ChevronDown, MessageSquarePlus, Paperclip, Shield, Trash2 } from 'lucide-react'
 import type { Agent } from '@earendil-works/pi-agent-core'
 import {
@@ -16,7 +16,9 @@ import {
 import { subscribeAgentEvents } from '../lib/agent-sse'
 import type { AgentMessage, ModelLike, PendingApproval, SessionSummary } from '../lib/types'
 import { asAgent, SurfaceAgentAdapter } from '../lib/surface-agent'
+import { assistantText } from '../lib/message-utils'
 import { ChatSurface } from './chat/surface'
+import type { SurfaceEditorBridgeElement } from './chat/surface/ChatTypes'
 import { setupAgentAccessMenu } from './chat/panel-decoration/agent-access-menu'
 import { decorateModelButtonLabel } from './chat/panel-decoration/model-controls'
 import { closeComposerModelMenu, openCustomOnlyModelSelector } from '@/lib/custom-model-selector'
@@ -26,12 +28,19 @@ import { useToast } from './Toast'
 
 const SESSION_KEY = 'noteflow.agent.sessionId'
 
+export type ChatPanelHandle = {
+  /** 编程式发送消息（选中文字 AI 操作等入口），走 ChatSurface 的编辑器 DOM 桥 */
+  ask: (text: string) => void
+}
+
 type Props = {
   projectId: string
   noteContext: { path: string; content: string } | null
   onOpenSetup: () => void
   model: ModelLike | null
   onModelChange: (model: ModelLike) => void
+  /** 一次 AI 回复结束（可能改过笔记文件，宿主据此触发 git 自动提交）；参数为最后一条回复正文 */
+  onAgentEnd?: (lastAssistantText: string) => void
 }
 
 /**
@@ -39,7 +48,7 @@ type Props = {
  * 笔记应用特有功能收敛到顶部纤细工具条（会话管理 / 附带笔记 / 写保护），
  * 模型切换用输入框自带的模型按钮 + quickforge 原版样式的模型菜单。
  */
-export function ChatPanel({ projectId, noteContext, onOpenSetup, model, onModelChange }: Props) {
+export const ChatPanel = forwardRef<ChatPanelHandle, Props>(function ChatPanel({ projectId, noteContext, onOpenSetup, model, onModelChange, onAgentEnd }: Props, ref) {
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [booted, setBooted] = useState(false)
   const [catalog, setCatalog] = useState<ModelLike[]>([])
@@ -54,8 +63,49 @@ export function ChatPanel({ projectId, noteContext, onOpenSetup, model, onModelC
   const noteContextRef = useRef(noteContext)
   const sessionIdRef = useRef<string | null>(null)
   const hostRef = useRef<HTMLDivElement>(null)
+  const onAgentEndRef = useRef(onAgentEnd)
   const dialog = useDialog()
   const toast = useToast()
+
+  /** agent_end 时从适配器消息里取最后一条 assistant 正文（选中文字 AI 的"应用回选区"用） */
+  const lastAssistantText = useCallback((): string => {
+    if (!adapter) return ''
+    for (let index = adapter.state.messages.length - 1; index >= 0; index--) {
+      const message = adapter.state.messages[index]
+      if (message?.role === 'assistant') {
+        const text = assistantText(message)
+        if (text) return text
+      }
+    }
+    return ''
+  }, [adapter])
+
+  useEffect(() => {
+    onAgentEndRef.current = onAgentEnd
+  }, [onAgentEnd])
+
+  /* ---------- 编程式发送（选中文字 AI 操作） ---------- */
+  const ask = useCallback(
+    (text: string) => {
+      // 右栏刚从折叠展开 / 会话恢复中时编辑器可能尚未挂载，短暂重试
+      const attempt = (remaining: number) => {
+        const editor = hostRef.current?.querySelector<HTMLElement>('.qf-message-editor') as SurfaceEditorBridgeElement | null
+        if (editor?.onSend) {
+          editor.onSend(text, [])
+          return
+        }
+        if (remaining > 0) {
+          window.setTimeout(() => attempt(remaining - 1), 250)
+          return
+        }
+        toast.error('对话面板尚未就绪，请稍后重试')
+      }
+      attempt(20)
+    },
+    [toast],
+  )
+
+  useImperativeHandle(ref, () => ({ ask }), [ask])
 
   useEffect(() => {
     attachNoteRef.current = attachNote
@@ -187,6 +237,7 @@ export function ChatPanel({ projectId, noteContext, onOpenSetup, model, onModelC
         }
       }
       adapter.handleSseEvent(event)
+      if (event.type === 'agent_end') onAgentEndRef.current?.(lastAssistantText())
     })
     return unsubscribe
   }, [adapter])
@@ -371,4 +422,4 @@ export function ChatPanel({ projectId, noteContext, onOpenSetup, model, onModelC
       </div>
     </div>
   )
-}
+})

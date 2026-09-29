@@ -2,6 +2,9 @@
 @plugin '@tailwindcss/typography';
 @import './quickforge-surface.css';
 
+/* dark: 工具类跟随手动切换的 .dark 类（而非 OS 偏好），与主题设置一致 */
+@custom-variant dark (&:where(.dark, .dark *));
+
 html,
 body,
 #root {
@@ -42,4 +45,65 @@ body {
   50% {
     opacity: 0.2;
   }
+}
+
+/* ===== 浅色模式下的 hljs 代码高亮（覆盖 github-dark 主题，配色取自 highlight.js 官方 github 主题） ===== */
+html:not(.dark) .hljs {
+  color: #24292e;
+  background: transparent;
+}
+html:not(.dark) .hljs-comment,
+html:not(.dark) .hljs-quote {
+  color: #6a737d;
+}
+html:not(.dark) .hljs-keyword,
+html:not(.dark) .hljs-selector-tag,
+html:not(.dark) .hljs-template-tag,
+html:not(.dark) .hljs-doctag,
+html:not(.dark) .hljs-type {
+  color: #d73a49;
+}
+html:not(.dark) .hljs-string,
+html:not(.dark) .hljs-regexp,
+html:not(.dark) .hljs-meta .hljs-string {
+  color: #032f62;
+}
+html:not(.dark) .hljs-number,
+html:not(.dark) .hljs-literal,
+html:not(.dark) .hljs-symbol,
+html:not(.dark) .hljs-meta,
+html:not(.dark) .hljs-attr,
+html:not(.dark) .hljs-attribute,
+html:not(.dark) .hljs-variable,
+html:not(.dark) .hljs-template-variable,
+html:not(.dark) .hljs-selector-attr,
+html:not(.dark) .hljs-selector-class,
+html:not(.dark) .hljs-selector-id,
+html:not(.dark) .hljs-selector-pseudo {
+  color: #005cc5;
+}
+html:not(.dark) .hljs-title,
+html:not(.dark) .hljs-title.class_,
+html:not(.dark) .hljs-title.function_,
+html:not(.dark) .hljs-section,
+html:not(.dark) .hljs-name {
+  color: #6f42c1;
+}
+html:not(.dark) .hljs-built_in,
+html:not(.dark) .hljs-class .hljs-title {
+  color: #e36209;
+}
+html:not(.dark) .hljs-tag {
+  color: #22863a;
+}
+html:not(.dark) .hljs-subst {
+  color: #24292e;
+}
+html:not(.dark) .hljs-addition {
+  color: #22863a;
+  background-color: #f0fff4;
+}
+html:not(.dark) .hljs-deletion {
+  color: #b31d28;
+  background-color: #ffeef0;
 }

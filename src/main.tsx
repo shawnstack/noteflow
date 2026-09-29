@@ -17,9 +17,9 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | 
   render() {
     if (this.state.error) {
       return (
-        <div className="flex h-screen flex-col items-center justify-center gap-3 bg-zinc-950 p-6 text-zinc-400">
-          <p className="text-sm font-medium text-red-400">界面出现异常</p>
-          <pre className="max-w-xl overflow-auto rounded-lg border border-zinc-800 bg-zinc-900 p-3 text-xs text-zinc-500">
+        <div className="flex h-screen flex-col items-center justify-center gap-3 bg-background p-6 text-muted-foreground">
+          <p className="text-sm font-medium text-red-500 dark:text-red-400">界面出现异常</p>
+          <pre className="max-w-xl overflow-auto rounded-lg border border-border bg-card p-3 text-xs text-muted-foreground">
             {String(this.state.error?.message || this.state.error)}
           </pre>
           <button

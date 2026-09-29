@@ -111,7 +111,7 @@ export function SetupDialog({ open, onClose, onConfigured }: Props) {
                   onClick={() => applyPreset(preset)}
                   className={`rounded-full border px-2.5 py-1 text-xs ${
                     providerName === preset.providerName
-                      ? 'border-indigo-500 bg-indigo-500/10 text-indigo-300'
+                      ? 'border-indigo-500 bg-indigo-500/10 text-indigo-600 dark:text-indigo-300'
                       : 'border-border text-muted-foreground hover:border-ring hover:text-foreground'
                   }`}
                 >
@@ -131,7 +131,7 @@ export function SetupDialog({ open, onClose, onConfigured }: Props) {
             推理模型（DeepSeek R1 / QwQ 等思考型模型）
           </label>
 
-          {error && <p className="rounded border border-red-900/50 bg-red-950/40 px-3 py-2 text-xs text-red-400">{error}</p>}
+          {error && <p className="rounded border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">{error}</p>}
 
           <p className="text-[11px] leading-5 text-muted-foreground/70">
             配置保存在本机 QuickForge 服务的数据目录中（~/.noteflow），仅用于NoteFlow的对话与写作辅助。
