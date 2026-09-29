@@ -105,9 +105,8 @@ npm run electron:start   # 直接以 Electron 运行（复用 dist）
 npm run electron:build   # 打包 dmg（release/NoteFlow-<版本>-arm64.dmg，mac arm64）
 ```
 
-模型配置：模型 provider / API key / 默认模型已从桌面版 QuickForge 迁移
-（存于 `~/.noteflow`，与桌面版 `~/.quickforge` 完全隔离，互不干扰）。
-新配置可在应用内「模型设置」完成（任一 OpenAI 兼容服务商）。
+模型配置存于 `~/.noteflow`（与桌面版 `~/.quickforge` 完全隔离，互不干扰），
+可在应用内「模型设置」添加（任一 OpenAI 兼容服务商）。
 
 ## Electron 桌面端（v0.5）
 
@@ -168,27 +167,6 @@ npm run electron:build   # 打包 dmg（release/NoteFlow-<版本>-arm64.dmg，ma
 | `NOTEFLOW_DATA_DIR` | `~/.noteflow` | 数据目录（模型配置、会话记录） |
 | `NOTEFLOW_NOTES_DIR` | `<项目>/notes` | 笔记目录 |
 | `NOTEFLOW_DEV_PORT` | `5179` | `dev:electron` 的 vite 端口 |
-
-## 从桌面版 QuickForge 迁移模型配置
-
-```bash
-python3 - <<'PY'
-import json, os
-src = os.path.expanduser('~/.quickforge/config')
-dst = os.path.expanduser('~/.noteflow/config')
-sp, dp = json.load(open(f'{src}/providers.json')), json.load(open(f'{dst}/providers.json'))
-dp['customProviders'].update(sp.get('customProviders', {}))
-dp['providerKeys'].update(sp.get('providerKeys', {}))
-json.dump(dp, open(f'{dst}/providers.json', 'w'), ensure_ascii=False, indent=2)
-ss, ds = json.load(open(f'{src}/settings.json')), json.load(open(f'{dst}/settings.json'))
-for k in ['active-model', 'default-options', 'language']:
-    if k in ss: ds[k] = ss[k]
-json.dump(ds, open(f'{dst}/settings.json', 'w'), ensure_ascii=False, indent=2)
-print('done')
-PY
-```
-
-（注意：只迁模型相关配置，不迁 hooks——桌面版的 build/ntfy hook 绑定的是 quickforge 项目和它自己的 sqlite，迁过来会错乱。）
 
 ## 已知限制（v1.4）
 
