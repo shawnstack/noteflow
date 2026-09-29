@@ -15,6 +15,8 @@ files:
   - asset-endpoint.mjs
   - dist/**
   - package.json
+  # 托盘图标随包携带（生产环境 build/ 不会整体打包）
+  - build/icons/16x16.png
 asar: false
 mac:
   category: public.app-category.productivity
@@ -23,10 +25,21 @@ mac:
     - target: dmg
       arch:
         - arm64
-# Windows：图标已备好（build/icon.ico）；在 mac 上交叉打包 NSIS 需要 wine，
+# Windows：在 mac 上交叉打包 NSIS 需要 wine，
 # 需要时执行 `electron-builder --win nsis --x64`。
 win:
   icon: build/icon.ico
+  target:
+    - target: nsis
+      arch:
+        - x64
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: NoteFlow
 # Linux：hicolor 尺寸集在 build/icons/（16-512 九档）。
 linux:
   category: Office

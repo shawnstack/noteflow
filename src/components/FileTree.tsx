@@ -28,6 +28,7 @@ import {
 } from './workspace/workspace-tree-state'
 import { runCommand, shQuote } from '../lib/api'
 import { movePath, moveToTrash, renamePath, restoreFromTrash, revealInFinder, deletePermanently, emptyTrash, TRASH_DIR } from '../lib/file-ops'
+import { formatShortcut, useShortcuts } from '../lib/shortcuts'
 import { ATTACH_NOTE_KEY, SETTINGS_EVENT } from './SettingsDialog'
 import { useDialog } from './Dialog'
 import { useToast } from './Toast'
@@ -121,6 +122,7 @@ function FileContextMenu({ x, y, items, onClose }: {
 }
 
 export function FileTree({ projectId, selectedPath, onSelect, onCreated, onPathMoved, treeVersion, onTreeChange }: Props) {
+  const shortcuts = useShortcuts()
   const [treeState, dispatchTree] = useReducer(workspaceTreeReducer, {})
   const [expandedPaths, setExpandedPaths] = useState<ReadonlySet<string>>(() => new Set())
   const [createTarget, setCreateTarget] = useState<{ kind: 'file' | 'dir'; parent: string } | null>(null)
@@ -485,7 +487,7 @@ export function FileTree({ projectId, selectedPath, onSelect, onCreated, onPathM
         <div className="flex items-center gap-0.5">
           <button
             type="button"
-            title="新建笔记（⌘N）"
+            title={`新建笔记（${formatShortcut(shortcuts.newNote)}）`}
             onClick={() => startCreate('file', '.')}
             className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
           >

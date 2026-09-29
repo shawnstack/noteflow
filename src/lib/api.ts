@@ -23,9 +23,34 @@ function post(path: string, body: unknown): Promise<unknown> {
 
 /* ---------- 项目 ---------- */
 
-export async function getActiveProject(): Promise<ProjectInfo | null> {
-  const payload = await jsonFetch<{ project: ProjectInfo | null }>('/api/project')
-  return payload.project
+export type ProjectBundle = { project: ProjectInfo | null; projects: ProjectInfo[] }
+
+/** 全量项目信息：激活项目 + 最近项目列表（服务端注册表，最多 20 个） */
+export async function getProjectBundle(): Promise<ProjectBundle> {
+  return jsonFetch<ProjectBundle>('/api/project')
+}
+
+/** 切换激活项目（同时刷新 lastOpenedAt，用于"最近项目"排序） */
+export async function activateProject(id: string): Promise<ProjectBundle> {
+  const payload = await post('/api/project/active', { id })
+  return payload as ProjectBundle
+}
+
+/** 按路径注册项目（幂等：同一路径返回同一 projectId）并激活 */
+export async function registerProjectPath(path: string): Promise<ProjectBundle> {
+  const payload = await post('/api/project/path', { path })
+  return payload as ProjectBundle
+}
+
+/** 服务端弹出目录选择框并注册所选目录（Web 模式用；Electron 走原生 IPC） */
+export async function selectProjectDirectory(): Promise<{ cancelled: boolean; project?: ProjectInfo }> {
+  const payload = (await post('/api/project/select-directory', {})) as { cancelled?: boolean; project?: ProjectInfo }
+  return { cancelled: Boolean(payload?.cancelled), project: payload?.project }
+}
+
+/** 从注册表移除项目（不动磁盘文件）；若移除的是激活项目，服务端自动切到列表第一个 */
+export async function removeProject(id: string): Promise<ProjectBundle> {
+  return jsonFetch<ProjectBundle>(`/api/project/${encodeURIComponent(id)}`, { method: 'DELETE' })
 }
 
 /* ---------- 文件 ---------- */
@@ -262,6 +287,8 @@ export async function rejectToolCall(sessionId: string, toolCallId: string): Pro
 }
 
 export type AgentStateSnapshot = {
+  sessionId: string
+  projectId?: string
   messages: AgentMessage[]
   isStreaming?: boolean
   status?: string

@@ -16,6 +16,7 @@
     "start": "node server.mjs --serve-static",
     "electron:start": "electron .",
     "electron:build": "npm run build && electron-builder --mac",
+    "electron:build:win": "npm run build && electron-builder --win",
     "typecheck": "tsc -b"
   },
   "dependencies": {

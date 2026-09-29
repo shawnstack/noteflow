@@ -26,7 +26,9 @@ import { ATTACH_NOTE_KEY, PROTECTED_KEY, SETTINGS_EVENT } from './SettingsDialog
 import { useDialog } from './Dialog'
 import { useToast } from './Toast'
 
-const SESSION_KEY = 'noteflow.agent.sessionId'
+const SESSION_KEY_PREFIX = 'noteflow.agent.sessionId'
+/** 旧版单项目时代的 key（仅读取兼容） */
+const LEGACY_SESSION_KEY = 'noteflow.agent.sessionId'
 
 export type ChatPanelHandle = {
   /** 编程式发送消息（选中文字 AI 操作等入口），走 ChatSurface 的编辑器 DOM 桥 */
@@ -49,6 +51,7 @@ type Props = {
  * 模型切换用输入框自带的模型按钮 + quickforge 原版样式的模型菜单。
  */
 export const ChatPanel = forwardRef<ChatPanelHandle, Props>(function ChatPanel({ projectId, noteContext, onOpenSetup, model, onModelChange, onAgentEnd }: Props, ref) {
+  const sessionKey = `${SESSION_KEY_PREFIX}:${projectId}`
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [booted, setBooted] = useState(false)
   const [catalog, setCatalog] = useState<ModelLike[]>([])
@@ -144,7 +147,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, Props>(function ChatPanel({
       const id = crypto.randomUUID()
       try {
         await createAgentSession(id, projectId, 'NoteFlow 对话', protectedMode ? 'default' : 'full-access')
-        localStorage.setItem(SESSION_KEY, id)
+        localStorage.setItem(sessionKey, id)
         adapter.bindSession(id)
         adapter.resetState()
         setSessionId(id)
@@ -155,7 +158,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, Props>(function ChatPanel({
       }
       setBooted(true)
     },
-    [adapter, projectId, protectedMode, toast],
+    [adapter, projectId, protectedMode, sessionKey, toast],
   )
 
   const restoreSession = useCallback(
@@ -163,7 +166,9 @@ export const ChatPanel = forwardRef<ChatPanelHandle, Props>(function ChatPanel({
       if (!adapter) return false
       const state = await getAgentState(id)
       if (!state) return false
-      localStorage.setItem(SESSION_KEY, id)
+      // 项目不匹配的会话（旧数据/别的项目）不在本窗口恢复
+      if (state.projectId && state.projectId !== projectId) return false
+      localStorage.setItem(sessionKey, id)
       adapter.bindSession(id)
       const messages = (state.messages ?? []).filter((m) => m.role === 'user' || m.role === 'assistant' || m.role === 'tool')
       adapter.restoreMessages(messages as AgentMessage[], Boolean(state.isStreaming))
@@ -171,13 +176,15 @@ export const ChatPanel = forwardRef<ChatPanelHandle, Props>(function ChatPanel({
       setApproval(state.pendingToolApproval ?? null)
       return true
     },
-    [adapter],
+    [adapter, projectId, sessionKey],
   )
 
   useEffect(() => {
     let cancelled = false
     const boot = async () => {
-      const [stored, catalogModels] = await Promise.all([localStorage.getItem(SESSION_KEY), getModelCatalog().catch(() => [])])
+      // 会话按项目隔离持久化；兼容旧版全局 key（restoreSession 会校验会话归属项目）
+      const stored = localStorage.getItem(sessionKey) ?? localStorage.getItem(LEGACY_SESSION_KEY)
+      const [catalogModels] = await Promise.all([getModelCatalog().catch(() => [])])
       if (cancelled) return
       setCatalog(catalogModels)
       if (stored && adapter && (await restoreSession(stored))) {
@@ -196,11 +203,12 @@ export const ChatPanel = forwardRef<ChatPanelHandle, Props>(function ChatPanel({
   const openSessions = useCallback(async () => {
     setSessionsOpen((prev) => !prev)
     try {
-      setSessions(await listSessions())
+      // 只展示当前项目的会话（多项目互不串台）
+      setSessions((await listSessions()).filter((s) => s.projectId === projectId))
     } catch {
       /* 打开失败保留旧列表 */
     }
-  }, [])
+  }, [projectId])
 
   const switchSession = async (id: string) => {
     if (id === sessionIdRef.current) {
@@ -216,7 +224,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, Props>(function ChatPanel({
     try {
       await deleteSession(id)
       if (id === sessionIdRef.current) await newSession(true)
-      setSessions(await listSessions().catch(() => []))
+      setSessions((await listSessions().catch(() => [])).filter((s) => s.projectId === projectId))
       toast.success('已删除对话')
     } catch (err) {
       toast.error(`删除失败：${err instanceof Error ? err.message : String(err)}`)

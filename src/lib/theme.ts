@@ -24,12 +24,26 @@ export function resolveTheme(pref: ThemePreference): 'light' | 'dark' {
   return pref === 'system' ? (systemPrefersDark() ? 'dark' : 'light') : pref
 }
 
+/** Electron preload 注入；浏览器里不存在 */
+function syncNativeTitleBar(theme: 'light' | 'dark') {
+  const bridge = (window as Window & { noteflow?: { setTheme?: (theme: 'light' | 'dark') => void } }).noteflow
+  bridge?.setTheme?.(theme)
+}
+
+/** 仅 Windows 桌面版启用标题栏覆盖（mac 有原生标题栏，浏览器无） */
+function isWindowsOverlay(): boolean {
+  const bridge = (window as Window & { noteflow?: { platform?: string; setTheme?: unknown } }).noteflow
+  return bridge?.platform === 'win32' && typeof bridge.setTheme === 'function'
+}
+
 /** 把主题应用到 <html>：切换 .dark 类 + color-scheme（同步原生滚动条/表单控件） */
 export function applyTheme(pref: ThemePreference) {
   const theme = resolveTheme(pref)
   const root = document.documentElement
   root.classList.toggle('dark', theme === 'dark')
+  root.classList.toggle('nf-win-titlebar', isWindowsOverlay())
   root.style.setProperty('color-scheme', theme)
+  syncNativeTitleBar(theme)
 }
 
 let mediaListenerAttached = false

@@ -18,7 +18,7 @@
  *  NOTEFLOW_PORT      NoteFlow 对外端口（默认 5179，传 0 为随机端口）
  *  NOTEFLOW_QF_PORT   QuickForge 服务端口（默认 5178）
  *  NOTEFLOW_DATA_DIR  数据目录（默认 ~/.noteflow）
- *  NOTEFLOW_NOTES_DIR 笔记目录（默认 <项目>/notes）
+ *  NOTEFLOW_NOTES_DIR 笔记目录（默认 <项目>/notes；Electron 打包态默认 ~/Documents/NoteFlow）
  */
 import { startNoteFlow } from './server-core.mjs'
 

@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { CalendarCheck, Feather, PanelLeft, PanelLeftClose, PanelRight, PanelRightClose, Search, Settings2, Unplug } from 'lucide-react'
-import { getActiveModel, getActiveProject, listNotePaths, readFileMeta, writeFileContent } from './lib/api'
+import { activateProject, getActiveModel, getProjectBundle, listNotePaths, readFileMeta, registerProjectPath, removeProject as removeProjectApi, selectProjectDirectory, writeFileContent } from './lib/api'
 import { initTheme } from './lib/theme'
+import { getDesktopBridge, openProjectInNewWindow } from './lib/desktop'
 import type { ModelLike, ProjectInfo } from './lib/types'
 import { ensureGitRepo, gitAutoCommit } from './lib/git-history'
 import { resolveWikiTarget } from './lib/wikilinks'
+import { formatShortcut, matchesShortcut, useShortcuts } from './lib/shortcuts'
 import { FileTree } from './components/FileTree'
 import { NoteEditor } from './components/NoteEditor'
 import { ChatPanel, type ChatPanelHandle } from './components/ChatPanel'
@@ -14,20 +16,28 @@ import { CommandRunner } from './components/CommandRunner'
 import { SearchPalette } from './components/SearchPalette'
 import { TabBar } from './components/TabBar'
 import { HistoryPanel } from './components/HistoryPanel'
+import { ProjectPicker } from './components/ProjectPicker'
+import { WindowButtons } from './components/WindowButtons'
 import { useDialog } from './components/Dialog'
+import { showPathDialog } from './components/ui/path-dialog'
+import { useToast } from './components/Toast'
 
 const LEFT_MIN = 180
 const LEFT_MAX = 440
 const RIGHT_MIN = 300
 const RIGHT_MAX = 620
 
-/** 多标签页持久化（重启后恢复打开的笔记） */
-const TABS_KEY = 'noteflow.openTabs'
-const ACTIVE_TAB_KEY = 'noteflow.activeTab'
+/** 多标签页持久化（重启后恢复打开的笔记）。key 按项目隔离：多窗口/多项目互不串台 */
+const TABS_KEY_PREFIX = 'noteflow.openTabs'
+const ACTIVE_TAB_KEY_PREFIX = 'noteflow.activeTab'
+/** 旧版单项目时代的 key（读取兼容，写入一律走带项目后缀的新 key） */
+const LEGACY_TABS_KEY = 'noteflow.openTabs'
+const LEGACY_ACTIVE_TAB_KEY = 'noteflow.activeTab'
 const MAX_RESTORE_TABS = 12
 
 export default function App() {
   const [project, setProject] = useState<ProjectInfo | null>(null)
+  const [projects, setProjects] = useState<ProjectInfo[]>([])
   const [bootError, setBootError] = useState<string | null>(null)
   const [selectedPath, setSelectedPath] = useState<string | null>(null)
   const [tabs, setTabs] = useState<string[]>([])
@@ -51,6 +61,11 @@ export default function App() {
   const chatPanelRef = useRef<ChatPanelHandle>(null)
   const gitTimerRef = useRef<number | null>(null)
   const dialog = useDialog()
+  const toast = useToast()
+
+  /** 本窗口绑定的项目（多窗口：一窗口一项目；切换即重置本窗口工作区状态） */
+  const tabsKey = project ? `${TABS_KEY_PREFIX}:${project.id}` : null
+  const activeTabKey = project ? `${ACTIVE_TAB_KEY_PREFIX}:${project.id}` : null
 
   useEffect(() => {
     selectedPathRef.current = selectedPath
@@ -68,13 +83,17 @@ export default function App() {
     let cancelled = false
     const boot = async () => {
       try {
-        const [activeProject, activeModel] = await Promise.all([getActiveProject(), getActiveModel()])
+        const [bundle, activeModel] = await Promise.all([getProjectBundle(), getActiveModel()])
         if (cancelled) return
-        if (!activeProject) {
+        if (!bundle.project || bundle.projects.length === 0) {
           setBootError('未找到激活的笔记项目，请确认 NoteFlow 服务（server.mjs）已启动')
           return
         }
-        setProject(activeProject)
+        // 多窗口：Electron 新窗口通过 ?project=<id> 绑定项目；无参数时用全局激活项目
+        const wanted = new URLSearchParams(window.location.search).get('project')
+        const chosen = (wanted && bundle.projects.find((p) => p.id === wanted)) || bundle.project
+        setProjects(bundle.projects)
+        setProject(chosen)
         setModel(activeModel)
         if (!activeModel) setSetupOpen(true)
       } catch (err) {
@@ -111,42 +130,180 @@ export default function App() {
     [tabs, selectedPath],
   )
 
-  // 打开的标签与激活页持久化
+  // 打开的标签与激活页持久化（key 按项目隔离；切换项目瞬间由恢复流程接管，避免误清新项目的已存标签）
+  const suppressPersistRef = useRef(false)
   useEffect(() => {
-    if (tabs.length) localStorage.setItem(TABS_KEY, JSON.stringify(tabs))
-    else localStorage.removeItem(TABS_KEY)
-  }, [tabs])
+    if (!tabsKey || suppressPersistRef.current) return
+    if (tabs.length) localStorage.setItem(tabsKey, JSON.stringify(tabs))
+    else localStorage.removeItem(tabsKey)
+  }, [tabs, tabsKey])
   useEffect(() => {
-    if (selectedPath) localStorage.setItem(ACTIVE_TAB_KEY, selectedPath)
-    else localStorage.removeItem(ACTIVE_TAB_KEY)
-  }, [selectedPath])
+    if (!activeTabKey || suppressPersistRef.current) return
+    if (selectedPath) localStorage.setItem(activeTabKey, selectedPath)
+    else localStorage.removeItem(activeTabKey)
+  }, [selectedPath, activeTabKey])
 
-  // 项目就绪后：初始化 git 仓库 + 恢复上次的标签页（校验文件仍存在）
-  const tabsRestoredRef = useRef(false)
+  // 项目就绪后：初始化 git 仓库 + 恢复该项目的标签页（校验文件仍存在；每个项目恢复一次）
+  const restoredProjectRef = useRef<string | null>(null)
   useEffect(() => {
-    if (!project || tabsRestoredRef.current) return
-    tabsRestoredRef.current = true
+    if (!project || restoredProjectRef.current === project.id) return
+    restoredProjectRef.current = project.id
+    suppressPersistRef.current = true
     void ensureGitRepo(project.id).catch(() => {})
     void (async () => {
-      const raw = localStorage.getItem(TABS_KEY)
-      if (!raw) return
-      let paths: unknown
-      try {
-        paths = JSON.parse(raw)
-      } catch {
-        return
+      const key = `${TABS_KEY_PREFIX}:${project.id}`
+      // 旧版单项目 key 兼容：无新 key 时回退读取一次，随即清理（避免别的项目误恢复）
+      let raw = localStorage.getItem(key)
+      if (raw === null && localStorage.getItem(LEGACY_TABS_KEY) !== null) {
+        raw = localStorage.getItem(LEGACY_TABS_KEY)
+        localStorage.removeItem(LEGACY_TABS_KEY)
+        localStorage.removeItem(LEGACY_ACTIVE_TAB_KEY)
       }
-      if (!Array.isArray(paths)) return
       const alive: string[] = []
-      for (const path of paths.slice(0, MAX_RESTORE_TABS)) {
-        if (typeof path !== 'string') continue
-        if (await readFileMeta(project.id, path).then(() => true).catch(() => false)) alive.push(path)
+      if (raw) {
+        let paths: unknown
+        try {
+          paths = JSON.parse(raw)
+        } catch {
+          paths = null
+        }
+        if (Array.isArray(paths)) {
+          for (const path of paths.slice(0, MAX_RESTORE_TABS)) {
+            if (typeof path !== 'string') continue
+            if (await readFileMeta(project.id, path).then(() => true).catch(() => false)) alive.push(path)
+          }
+        }
       }
-      if (alive.length === 0) return
-      const active = localStorage.getItem(ACTIVE_TAB_KEY)
-      setTabs(alive)
-      setSelectedPath(alive.includes(active ?? '') ? (active as string) : alive[alive.length - 1])
+      if (alive.length > 0) {
+        const active = localStorage.getItem(`${ACTIVE_TAB_KEY_PREFIX}:${project.id}`)
+        setTabs(alive)
+        setSelectedPath(alive.includes(active ?? '') ? (active as string) : alive[alive.length - 1])
+      } else {
+        setTabs([])
+        setSelectedPath(null)
+      }
+      suppressPersistRef.current = false
     })()
+  }, [project])
+
+  /* ---------- 项目切换（一窗口一项目；切换即重置本窗口工作区，组件树按 key 重挂载） ---------- */
+  const applyProject = useCallback((next: ProjectInfo, nextProjects?: ProjectInfo[]) => {
+    // 挂起标签持久化直到恢复流程完成（否则本 effect 周期会先清掉新项目已存的标签）
+    suppressPersistRef.current = true
+    setTabs([])
+    setSelectedPath(null)
+    setDirtyTabs({})
+    setNoteList([])
+    setHistoryPath(null)
+    setAiResult(null)
+    setSearchOpen(false)
+    setTreeVersion((v) => v + 1)
+    if (nextProjects) setProjects(nextProjects)
+    setProject(next)
+  }, [])
+
+  const switchProject = useCallback(
+    async (next: ProjectInfo) => {
+      if (next.id === projectRef.current?.id) return
+      if (Object.values(dirtyTabs).some(Boolean)) {
+        const confirmed = await dialog.confirm({
+          title: '切换项目',
+          message: '当前有未保存的修改。切换项目会关闭这些标签页，内容已自动存为草稿，重新打开笔记可恢复。',
+          confirmText: '切换',
+        })
+        if (!confirmed) return
+      }
+      try {
+        const bundle = await activateProject(next.id)
+        if (!bundle.project) throw new Error('项目不存在或目录已失效')
+        applyProject(bundle.project, bundle.projects)
+        toast.success(`已切换到「${next.name}」`)
+      } catch (err) {
+        toast.error(`切换项目失败：${err instanceof Error ? err.message : String(err)}`)
+      }
+    },
+    [applyProject, dirtyTabs, dialog, toast],
+  )
+
+  /** 添加项目：对话框里粘贴/输入路径，或点「浏览…」走原生目录选择框；注册后当前窗口切入新项目 */
+  const addProject = useCallback(async () => {
+    const browse = async (): Promise<string | null> => {
+      const bridge = getDesktopBridge()
+      if (bridge?.selectDirectory) return bridge.selectDirectory()
+      try {
+        const res = await selectProjectDirectory()
+        return res.cancelled || !res.project ? null : res.project.path
+      } catch (err) {
+        toast.error(`打开目录选择框失败：${err instanceof Error ? err.message : String(err)}`)
+        return null
+      }
+    }
+    const dir = await showPathDialog({
+      title: '添加项目',
+      description: '输入或粘贴本地文件夹的完整路径，回车即可添加。',
+      placeholder: 'D:\\notes\\我的项目',
+      confirmLabel: '添加',
+      browse,
+    })
+    if (!dir) return
+    try {
+      const bundle = await registerProjectPath(dir)
+      if (!bundle.project) throw new Error('注册项目失败')
+      applyProject(bundle.project, bundle.projects)
+      toast.success(`已添加项目「${bundle.project.name}」`)
+    } catch (err) {
+      toast.error(`添加项目失败：${err instanceof Error ? err.message : String(err)}`)
+    }
+  }, [applyProject, toast])
+
+  /** 移除项目：仅从最近列表删除注册信息，不动磁盘文件；当前项目不可移除 */
+  const removeProjectHandler = useCallback(
+    async (target: ProjectInfo) => {
+      const current = projectRef.current
+      if (!current || current.id === target.id) return
+      const confirmed = await dialog.confirm({
+        title: '移除项目',
+        message: `确定从列表移除「${target.name}」吗？\n${target.path}\n不会删除磁盘上的任何文件，之后可随时重新添加。`,
+        confirmText: '移除',
+      })
+      if (!confirmed) return
+      try {
+        const bundle = await removeProjectApi(target.id)
+        setProjects(bundle.projects)
+        // 防御：若恰好是当前项目（多窗口场景被服务端切走），跟随服务端状态切换
+        if (projectRef.current?.id === target.id && bundle.project) {
+          applyProject(bundle.project, bundle.projects)
+        }
+        toast.success(`已移除「${target.name}」`)
+      } catch (err) {
+        toast.error(`移除项目失败：${err instanceof Error ? err.message : String(err)}`)
+      }
+    },
+    [applyProject, dialog, toast],
+  )
+
+  /** 下拉打开时刷新最近项目列表（其他窗口的切换会更新 lastOpenedAt） */
+  const refreshProjects = useCallback(async () => {
+    try {
+      setProjects((await getProjectBundle()).projects)
+    } catch {
+      /* 忽略：保留当前列表 */
+    }
+  }, [])
+
+  // 窗口标题跟随项目；URL 同步 ?project= 参数（刷新/新窗口保持绑定）
+  useEffect(() => {
+    if (!project) return
+    const title = `${project.name} — NoteFlow`
+    document.title = title
+    getDesktopBridge()?.setWindowTitle?.(title)
+    try {
+      const url = new URL(window.location.href)
+      url.searchParams.set('project', project.id)
+      window.history.replaceState(null, '', url)
+    } catch {
+      /* URL 异常环境仅影响刷新后的项目记忆 */
+    }
   }, [project])
 
   const handleDirtyChange = useCallback((path: string, dirty: boolean) => {
@@ -206,7 +363,8 @@ export default function App() {
     document.body.style.userSelect = 'none'
   }
 
-  /* ---------- 快捷键 ---------- */
+  /* ---------- 快捷键（设置中可自定义） ---------- */
+  const shortcuts = useShortcuts()
   const createNote = useCallback(async () => {
     const name = await dialog.prompt({ title: '新建笔记', placeholder: '笔记名（可含目录，如 日记/今天.md）', confirmText: '创建' })
     if (!name || !name.trim()) return
@@ -236,21 +394,20 @@ export default function App() {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      const mod = event.metaKey || event.ctrlKey
-      if (mod && event.key.toLowerCase() === 'p') {
+      if (matchesShortcut(event, shortcuts.search)) {
         event.preventDefault()
         setSearchOpen(true)
-      } else if (mod && event.key.toLowerCase() === 'n') {
+      } else if (matchesShortcut(event, shortcuts.newNote)) {
         event.preventDefault()
         void createNote()
-      } else if (mod && event.key.toLowerCase() === 'w') {
+      } else if (matchesShortcut(event, shortcuts.closeTab)) {
         // 浏览器可能不允许网页拦截 ⌘W，尽力而为（标签 × / 中键始终可用）
         const active = selectedPathRef.current
         if (active) {
           event.preventDefault()
           closeTab(active)
         }
-      } else if (mod && event.key.toLowerCase() === 'd') {
+      } else if (matchesShortcut(event, shortcuts.dailyNote)) {
         // 每日笔记（浏览器 ⌘D 收藏可被 preventDefault 拦截时优先本应用）
         event.preventDefault()
         void openTodayNote()
@@ -260,7 +417,7 @@ export default function App() {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [createNote, closeTab, openTodayNote])
+  }, [shortcuts, createNote, closeTab, openTodayNote])
 
   /* ---------- 回调 ---------- */
   const handleNoteContent = useCallback((path: string, content: string) => {
@@ -397,9 +554,15 @@ export default function App() {
         <Feather className="size-4 text-indigo-500 dark:text-indigo-400" />
         <span className="text-sm font-medium tracking-wide">NoteFlow</span>
         {project && (
-          <span className="ml-1 max-w-40 truncate rounded-full bg-card px-2.5 py-0.5 text-[11px] text-muted-foreground" title={project.path}>
-            {project.name}
-          </span>
+          <ProjectPicker
+            current={project}
+            projects={projects}
+            onSelect={(next) => void switchProject(next)}
+            onOpenInWindow={openProjectInNewWindow}
+            onAdd={() => void addProject()}
+            onRemove={(target) => void removeProjectHandler(target)}
+            onMenuOpen={() => void refreshProjects()}
+          />
         )}
         <button
           type="button"
@@ -408,19 +571,18 @@ export default function App() {
         >
           <Search className="size-3.5" />
           搜索
-          <kbd className="rounded border border-border px-1 text-[10px] text-muted-foreground/70">⌘P</kbd>
+          <kbd className="rounded border border-border px-1 text-[10px] text-muted-foreground/70">{formatShortcut(shortcuts.search)}</kbd>
         </button>
         <button
           type="button"
           onClick={() => void openTodayNote()}
-          title="打开今天的日记（不存在则按模板创建）· ⌘D"
+          title={`打开今天的日记（不存在则按模板创建）· ${formatShortcut(shortcuts.dailyNote)}`}
           className="ml-1 flex items-center gap-1.5 rounded-lg border border-border bg-card px-2.5 py-1 text-[12px] text-muted-foreground hover:border-border hover:text-foreground"
         >
           <CalendarCheck className="size-3.5" />
           今日
         </button>
         <span className="ml-auto flex items-center gap-1">
-          <span className="hidden text-[11px] text-muted-foreground/70 md:inline">⌘S 保存 · ⌘N 新建 · ⌘D 日记</span>
           <button
             type="button"
             title="设置"
@@ -439,10 +601,11 @@ export default function App() {
             </button>
           )}
         </span>
+        <WindowButtons />
       </header>
 
-      {/* 三栏主体 */}
-      <div className="flex min-h-0 flex-1">
+      {/* 三栏主体（key=项目 id：切换项目时整体重挂载，文件树/编辑器/对话面板状态全部按项目重置） */}
+      <div key={project?.id ?? 'booting'} className="flex min-h-0 flex-1">
         {!leftCollapsed && (
           <>
             <aside className="shrink-0 border-r border-border bg-background" style={{ width: leftWidth }}>

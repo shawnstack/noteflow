@@ -13,13 +13,13 @@
  *  port        静态服务端口，传 0 表示随机（默认 NOTEFLOW_PORT / 5179）
  *  qfPort      QuickForge 服务端口（默认 NOTEFLOW_QF_PORT / 5178）
  *  dataDir     数据目录（默认 ~/.noteflow）
- *  notesDir    笔记目录（默认 <项目>/notes）
+ *  notesDir    笔记目录（默认 <项目>/notes；Electron 打包态默认 ~/Documents/NoteFlow）
  *  serveStatic 是否托管 dist 静态文件 + /api 反代（dev 模式为 false，前端由 vite 提供）
  *  inline      QuickForge 是否运行于当前进程（Electron 用）
  *  log         日志函数
  */
 import { createServer, request as httpRequest } from 'node:http'
-import { readFile, stat } from 'node:fs/promises'
+import { mkdir, readFile, stat } from 'node:fs/promises'
 import { extname, join, normalize, resolve } from 'node:path'
 import { homedir } from 'node:os'
 import { existsSync } from 'node:fs'
@@ -29,6 +29,14 @@ import { createAssetEndpoint } from './asset-endpoint.mjs'
 
 const ROOT = resolve(fileURLToPath(new URL('.', import.meta.url)))
 const DIST = join(ROOT, 'dist')
+
+/** 打包进安装目录后不能把笔记写进 resources/app/notes（只读且路径过长会被截断）。 */
+function defaultNotesDir() {
+  if (process.env.NOTEFLOW_NOTES_DIR) return resolve(process.env.NOTEFLOW_NOTES_DIR)
+  const packaged = Boolean(process.versions.electron) && !process.defaultApp && !process.env.VITE_DEV_SERVER_URL
+  if (packaged) return join(homedir(), 'Documents', 'NoteFlow')
+  return join(ROOT, 'notes')
+}
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -50,7 +58,7 @@ export async function startNoteFlow(options = {}) {
     port = Number(process.env.NOTEFLOW_PORT || 5179),
     qfPort = Number(process.env.NOTEFLOW_QF_PORT || 5178),
     dataDir = process.env.NOTEFLOW_DATA_DIR || join(homedir(), '.noteflow'),
-    notesDir = resolve(process.env.NOTEFLOW_NOTES_DIR || join(ROOT, 'notes')),
+    notesDir = defaultNotesDir(),
     serveStatic = true,
     inline = false,
     log = (tag, msg = '') => console.log(`[noteflow] ${tag}${msg ? ` ${msg}` : ''}`),
@@ -86,6 +94,7 @@ export async function startNoteFlow(options = {}) {
   log('启动 QuickForge 服务（NoteFlow 专属实例）…', inline ? '（inline 模式：运行于当前进程）' : '')
   log(`数据目录: ${dataDir}`)
   log(`笔记目录: ${notesDir}`)
+  await mkdir(notesDir, { recursive: true })
 
   const app = await startQuickForge({
     host: '127.0.0.1',

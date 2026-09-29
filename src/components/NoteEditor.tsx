@@ -39,6 +39,7 @@ import {
 } from '../lib/api'
 import { extractWikiTargets, resolveWikiTarget, transformWikiLinks, wikiCompleteCandidates } from '../lib/wikilinks'
 import { moveToTrash, renamePath, restoreFromTrash, TRASH_DIR } from '../lib/file-ops'
+import { matchesShortcut, useShortcuts } from '../lib/shortcuts'
 import { MarkdownReader } from './workspace/MarkdownReader'
 import { isBrowserPreviewablePath, workspacePreviewUrl } from './workspace/artifact-preview-utils'
 import { useDialog } from './Dialog'
@@ -76,6 +77,20 @@ type Props = {
 type AskAction = 'polish' | 'translate' | 'explain' | 'expand'
 
 const DRAFT_PREFIX = 'noteflow.draft:'
+
+/** 草稿 key 按项目隔离（多窗口/多项目互不串台） */
+const draftKey = (projectId: string, path: string) => `${DRAFT_PREFIX}${projectId}:${path}`
+/** 读取草稿：优先项目隔离 key，兼容旧版全局 key */
+const readDraft = (projectId: string, path: string): string | null =>
+  localStorage.getItem(draftKey(projectId, path)) ?? localStorage.getItem(DRAFT_PREFIX + path)
+const writeDraft = (projectId: string, path: string, content: string) => {
+  localStorage.setItem(draftKey(projectId, path), content)
+  localStorage.removeItem(DRAFT_PREFIX + path) // 清理旧版全局 key
+}
+const clearDraft = (projectId: string, path: string) => {
+  localStorage.removeItem(draftKey(projectId, path))
+  localStorage.removeItem(DRAFT_PREFIX + path)
+}
 
 export function NoteEditor({ projectId, path, onSaved, onContentChange, onFileMoved, onDirtyChange, onAskAi, onOpenHistory, onFileCreated, noteList, onOpenWiki, onOpenPath, aiResult }: Props) {
   const [content, setContent] = useState('')
@@ -119,7 +134,7 @@ export function NoteEditor({ projectId, path, onSaved, onContentChange, onFileMo
       setSavedMtime(data.mtimeMs)
       setIsNew(false)
       setExternalChanged(false)
-      localStorage.removeItem(DRAFT_PREFIX + target)
+      clearDraft(projectId, target)
       setDraftRestored(false)
     },
     [projectId],
@@ -130,7 +145,7 @@ export function NoteEditor({ projectId, path, onSaved, onContentChange, onFileMo
     // 切走前把上一个文件的未保存草稿立即落盘（防抖 800ms 窗口内切换会丢最近输入）
     const prev = editStateRef.current
     if (prev.path && prev.path !== path && prev.dirty) {
-      localStorage.setItem(DRAFT_PREFIX + prev.path, prev.draft)
+      writeDraft(projectId, prev.path, prev.draft)
     }
     editStateRef.current = { path: path ?? '', draft: '', dirty: false }
     pathRef.current = path
@@ -156,7 +171,7 @@ export function NoteEditor({ projectId, path, onSaved, onContentChange, onFileMo
         setSavedMtime(data.mtimeMs)
         setIsNew(false)
         // 崩溃草稿恢复
-        const saved = localStorage.getItem(DRAFT_PREFIX + path)
+        const saved = readDraft(projectId, path)
         if (saved !== null && saved !== data.content) {
           setDraft(saved)
           setDirty(true)
@@ -164,7 +179,7 @@ export function NoteEditor({ projectId, path, onSaved, onContentChange, onFileMo
           setMode('edit')
         } else {
           setDraft(data.content)
-          localStorage.removeItem(DRAFT_PREFIX + path)
+          clearDraft(projectId, path)
         }
       })
       .catch(() => {
@@ -194,7 +209,7 @@ export function NoteEditor({ projectId, path, onSaved, onContentChange, onFileMo
       setIsNew(false)
       setDraftRestored(false)
       setExternalChanged(false)
-      localStorage.removeItem(DRAFT_PREFIX + path)
+      clearDraft(projectId, path)
       const meta = await readFileMeta(projectId, path).catch(() => null)
       if (meta && pathRef.current === path) setSavedMtime(meta.mtimeMs)
       toast.success(`已保存 ${path}`)
@@ -207,10 +222,11 @@ export function NoteEditor({ projectId, path, onSaved, onContentChange, onFileMo
     }
   }, [projectId, path, draft, saving, onSaved, toast])
 
-  // Ctrl/Cmd + S 保存
+  // 保存快捷键（设置中可自定义）
+  const shortcuts = useShortcuts()
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's') {
+      if (matchesShortcut(event, shortcuts.save)) {
         if (!dirty) return
         event.preventDefault()
         void save()
@@ -218,16 +234,16 @@ export function NoteEditor({ projectId, path, onSaved, onContentChange, onFileMo
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [save, dirty])
+  }, [shortcuts, save, dirty])
 
   // 草稿防抖持久化（崩溃保护）
   useEffect(() => {
     if (!path || !dirty) return
     const timer = window.setTimeout(() => {
-      localStorage.setItem(DRAFT_PREFIX + path, draft)
+      writeDraft(projectId, path, draft)
     }, 800)
     return () => window.clearTimeout(timer)
-  }, [path, draft, dirty])
+  }, [projectId, path, draft, dirty])
 
   // 编辑状态快照同步（仅当前文件；path 切换期间不串档）+ 未保存状态上报（标签栏圆点）
   useEffect(() => {

@@ -1,8 +1,18 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Bot, Info, Palette, Settings2, SlidersHorizontal, X } from 'lucide-react'
+import { Bot, Info, Keyboard, Palette, Settings2, SlidersHorizontal, X } from 'lucide-react'
 import { getActiveModel, getModelCatalog, setActiveModel } from '../lib/api'
 import type { ModelLike } from '../lib/types'
 import { getThemePreference, setThemePreference, type ThemePreference } from '../lib/theme'
+import {
+  SHORTCUT_ACTIONS,
+  type ShortcutActionId,
+  formatShortcut,
+  getShortcuts,
+  resetShortcuts,
+  saveShortcuts,
+  shortcutConflict,
+  type Shortcuts,
+} from '../lib/shortcuts'
 import { useToast } from './Toast'
 
 export const PROTECTED_KEY = 'noteflow.chat.protected'
@@ -24,6 +34,8 @@ export function SettingsDialog({ open, onClose, onOpenSetup, notesDir }: Props) 
   const [attachNoteDefault, setAttachNoteDefault] = useState(true)
   const [fontSize, setFontSize] = useState(15)
   const [theme, setTheme] = useState<ThemePreference>('dark')
+  const [shortcuts, setShortcutsState] = useState<Shortcuts>(() => getShortcuts())
+  const [recordingAction, setRecordingAction] = useState<ShortcutActionId | null>(null)
   const toast = useToast()
 
   useEffect(() => {
@@ -37,6 +49,8 @@ export function SettingsDialog({ open, onClose, onOpenSetup, notesDir }: Props) 
     setAttachNoteDefault(localStorage.getItem(ATTACH_NOTE_KEY) !== '0')
     setFontSize(Number(localStorage.getItem(FONT_SIZE_KEY)) || 15)
     setTheme(getThemePreference())
+    setShortcutsState(getShortcuts())
+    setRecordingAction(null)
   }, [open])
 
   const modelGroups = useMemo(
@@ -156,6 +170,46 @@ export function SettingsDialog({ open, onClose, onOpenSetup, notesDir }: Props) 
             </label>
           </section>
 
+          {/* 快捷键 */}
+          <section>
+            <h3 className="mb-2 flex items-center gap-1.5 text-[12px] font-semibold text-foreground">
+              <Keyboard className="size-3.5" />
+              快捷键
+              <button
+                type="button"
+                onClick={() => {
+                  const defaults = resetShortcuts()
+                  setShortcutsState(defaults)
+                  toast.success('快捷键已恢复默认')
+                }}
+                className="ml-auto text-[11px] font-normal text-muted-foreground/70 hover:text-foreground"
+              >
+                恢复默认
+              </button>
+            </h3>
+            <div className="space-y-1.5 rounded-lg border border-border bg-background px-3 py-2.5">
+              <ShortcutRow
+                key={recordingAction ?? 'none'}
+                shortcuts={shortcuts}
+                recordingAction={recordingAction}
+                onRecord={(action) => setRecordingAction((current) => (current === action ? null : action))}
+                onKey={(action, key) => {
+                  const next = { ...shortcuts, [action]: key }
+                  const conflict = shortcutConflict(next, action)
+                  if (conflict) {
+                    const label = SHORTCUT_ACTIONS.find((item) => item.id === conflict)?.label ?? conflict
+                    toast.error(`与「${label}」冲突，请换一个按键`)
+                    return
+                  }
+                  setShortcutsState(next)
+                  saveShortcuts(next)
+                  setRecordingAction(null)
+                }}
+              />
+              <p className="pt-1 text-[11px] text-muted-foreground/70">均为 Cmd/Ctrl + 字母组合；点击按键后直接按新字母键修改，Esc 取消。</p>
+            </div>
+          </section>
+
           {/* 外观 */}
           <section>
             <h3 className="mb-2 flex items-center gap-1.5 text-[12px] font-semibold text-foreground">
@@ -237,6 +291,63 @@ export function SettingsDialog({ open, onClose, onOpenSetup, notesDir }: Props) 
         </div>
       </div>
     </div>
+  )
+}
+
+/** 快捷键行：展示 + 点击录入新字母键（Cmd/Ctrl 前缀固定） */
+function ShortcutRow({
+  shortcuts,
+  recordingAction,
+  onRecord,
+  onKey,
+}: {
+  shortcuts: Shortcuts
+  recordingAction: ShortcutActionId | null
+  onRecord: (action: ShortcutActionId) => void
+  onKey: (action: ShortcutActionId, key: string) => void
+}) {
+  useEffect(() => {
+    if (!recordingAction) return
+    const onCapture = (event: KeyboardEvent) => {
+      event.preventDefault()
+      event.stopPropagation()
+      if (event.key === 'Escape') {
+        onRecord(recordingAction)
+        return
+      }
+      const key = event.key.trim().toLowerCase()
+      if (/^[a-z]$/.test(key)) onKey(recordingAction, key)
+    }
+    window.addEventListener('keydown', onCapture, true)
+    return () => window.removeEventListener('keydown', onCapture, true)
+  }, [recordingAction, onRecord, onKey])
+
+  return (
+    <>
+      {SHORTCUT_ACTIONS.map((action) => {
+        const recording = recordingAction === action.id
+        return (
+          <div key={action.id} className="flex items-center justify-between gap-4">
+            <span title={action.description}>
+              <span className="block text-[13px] text-foreground">{action.label}</span>
+              <span className="block text-[11px] text-muted-foreground/70">{action.description}</span>
+            </span>
+            <button
+              type="button"
+              onClick={() => onRecord(action.id)}
+              className={`shrink-0 rounded-md border px-2.5 py-1 text-xs tabular-nums ${
+                recording
+                  ? 'animate-pulse border-primary bg-primary/10 text-primary'
+                  : 'border-border text-muted-foreground hover:border-border hover:text-foreground'
+              }`}
+              title={recording ? '按下新字母键（Esc 取消）' : '点击修改'}
+            >
+              {recording ? '按下按键…' : formatShortcut(shortcuts[action.id])}
+            </button>
+          </div>
+        )
+      })}
+    </>
   )
 }
 

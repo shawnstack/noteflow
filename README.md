@@ -8,6 +8,13 @@
 
 **设计系统**：全局采用 quickforge 语义 token（背景/前景/边框/accent），三栏一套色系；弹窗（确认/输入）直接复用 quickforge 的 `showConfirm` / `showPrompt`（命令式，交互动画完全一致）。
 
+**项目与多窗口（顶栏项目下拉）**
+- **项目下拉选择器**：顶栏项目徽章可点击，列出最近项目（按最近打开排序、含相对时间与路径），点击即切换
+- **多窗口**：项目列表每项的「在新窗口打开」按钮；Electron 下**一个窗口只绑定一个项目**，同项目再开窗口会聚焦已有窗口（Web 模式退化为新标签页）
+- **添加项目…**：下拉底部入口，原生目录选择框选择文件夹注册为新项目（同一路径幂等，永远同一项目 id）
+- 切换项目有未保存修改时确认（内容已自动存草稿，重开笔记可恢复）；标签页 / AI 会话 / 崩溃草稿均按项目隔离持久化，重启后按项目恢复
+- 窗口标题跟随项目名；后端项目注册表最多保留 20 个最近项目（`~/.noteflow/config/projects.json`）
+
 **文件管理（左栏）**
 - 文件树：**quickforge WorkspaceFileTree 组件**（懒加载分页、目录状态机重试、图片缩略图）
 - 新建笔记（支持 `日记/今天.md` 自动建目录）、新建文件夹
@@ -164,7 +171,7 @@ npm run electron:build   # 打包 dmg（release/NoteFlow-<版本>-arm64.dmg，ma
 | `NOTEFLOW_PORT` | `5179` | NoteFlow 对外端口（生产模式，`0` 为随机） |
 | `NOTEFLOW_QF_PORT` | `5178` | QuickForge 服务端口 |
 | `NOTEFLOW_DATA_DIR` | `~/.noteflow` | 数据目录（模型配置、会话记录） |
-| `NOTEFLOW_NOTES_DIR` | `<项目>/notes` | 笔记目录 |
+| `NOTEFLOW_NOTES_DIR` | `<项目>/notes`（打包版 `~/Documents/NoteFlow`） | 笔记目录 |
 | `NOTEFLOW_DEV_PORT` | `5179` | `dev:electron` 的 vite 端口 |
 
 ## 已知限制（v1.4）
@@ -173,3 +180,4 @@ npm run electron:build   # 打包 dmg（release/NoteFlow-<版本>-arm64.dmg，ma
 - goal/todo/ask-user/subagent/generate-image 五类工具的专属渲染卡未搬（回落默认渲染，不影响使用）。
 - 双链的 `[[` 补全弹层位置按等宽字体估算光标坐标（分屏/极端行宽下可能有少量偏移）。
 - 版本历史基于 git log（单文件 200 条上限）；`run_command` 输出预览限 200 行。
+- 多窗口下「全局激活项目」随最后一次切换变化（影响新开窗口的默认项目）；各窗口自身绑定不受影响。Web 模式的"多窗口"是新浏览器标签页（同源共享 localStorage，已按项目隔离 key）。

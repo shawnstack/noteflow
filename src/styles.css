@@ -20,6 +20,18 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* Windows 无边框窗口：应用顶栏即拖拽区；窗口按钮为普通 DOM 按钮（自绘） */
+html.nf-win-titlebar header {
+  -webkit-app-region: drag;
+}
+
+html.nf-win-titlebar header button,
+html.nf-win-titlebar header a,
+html.nf-win-titlebar header input,
+html.nf-win-titlebar header kbd {
+  -webkit-app-region: no-drag;
+}
+
 /* 细滚动条 */
 *::-webkit-scrollbar {
   width: 8px;

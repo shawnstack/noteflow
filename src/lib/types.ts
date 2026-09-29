@@ -28,6 +28,7 @@ export type ProjectInfo = {
   name: string
   path: string
   lastOpenedAt?: string
+  sortOrder?: number
 }
 
 /** pi-agent-core 的 AgentMessage（noteflow 关心的字段子集） */
@@ -78,6 +79,7 @@ export type SessionSummary = {
   status?: string
   scope?: string
   accessMode?: string
+  projectId?: string
 }
 
 export type ModelLike = {
