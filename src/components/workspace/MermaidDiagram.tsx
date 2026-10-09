@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { t } from '@/lib/i18n'
-import { createMermaidSvgDataUrl, renderMermaidSvg } from '@/lib/mermaid-renderer'
+import { createMermaidSvgDataUrl, getMermaidErrorMessage, renderMermaidSvg } from '@/lib/mermaid-renderer'
 
 type MermaidDiagramProps = {
   source: string
@@ -10,6 +10,7 @@ type MermaidDiagramState = {
   source: string
   dataUrl: string
   error: boolean
+  errorMessage: string
 }
 
 type MermaidDiagramMode = {
@@ -19,7 +20,7 @@ type MermaidDiagramMode = {
 
 export function MermaidDiagram({ source }: MermaidDiagramProps) {
   const [mode, setMode] = useState<MermaidDiagramMode>({ source, value: 'preview' })
-  const [state, setState] = useState<MermaidDiagramState>({ source: '', dataUrl: '', error: false })
+  const [state, setState] = useState<MermaidDiagramState>({ source: '', dataUrl: '', error: false, errorMessage: '' })
 
   useEffect(() => {
     let cancelled = false
@@ -27,11 +28,11 @@ export function MermaidDiagram({ source }: MermaidDiagramProps) {
     void renderMermaidSvg(source)
       .then((svg) => {
         if (cancelled) return
-        setState({ source, dataUrl: createMermaidSvgDataUrl(svg), error: false })
+        setState({ source, dataUrl: createMermaidSvgDataUrl(svg), error: false, errorMessage: '' })
       })
-      .catch(() => {
+      .catch((error: unknown) => {
         if (cancelled) return
-        setState({ source, dataUrl: '', error: true })
+        setState({ source, dataUrl: '', error: true, errorMessage: getMermaidErrorMessage(error) })
       })
 
     return () => {
@@ -39,7 +40,7 @@ export function MermaidDiagram({ source }: MermaidDiagramProps) {
     }
   }, [source])
 
-  const currentState = state.source === source ? state : { source, dataUrl: '', error: false }
+  const currentState = state.source === source ? state : { source, dataUrl: '', error: false, errorMessage: '' }
   const currentMode = mode.source === source ? mode.value : 'preview'
   const loading = state.source !== source
   const showSource = currentMode === 'source' || currentState.error
@@ -75,7 +76,16 @@ export function MermaidDiagram({ source }: MermaidDiagramProps) {
         </div>
       ) : showSource ? (
         <>
-          {currentState.error ? <p className="px-4 pt-3 text-xs text-muted-foreground">{t('mermaidRenderFailed')}</p> : null}
+          {currentState.error ? (
+            <>
+              <p className="px-4 pt-3 text-xs text-muted-foreground">{t('mermaidRenderFailed')}</p>
+              {currentState.errorMessage ? (
+                <pre className="overflow-auto px-4 pt-2 font-mono text-[11px] leading-5 text-red-500 dark:text-red-400">
+                  <code>{currentState.errorMessage}</code>
+                </pre>
+              ) : null}
+            </>
+          ) : null}
           <pre className="overflow-auto p-4 text-[12px] leading-5"><code>{source}</code></pre>
         </>
       ) : (

@@ -34,10 +34,26 @@ async function loadMermaid() {
       securityLevel: 'strict',
       theme: 'neutral',
       htmlLabels: false,
+      // 避免解析失败时把 "Syntax error in text" 错误图注入 body 底部
+      suppressErrorRendering: true,
     })
     return mermaid
   })
   return mermaidPromise
+}
+
+/** 移除 mermaid.render 挂在 body 上的临时节点（id 为 "d" + renderId） */
+function removeMermaidTempElements() {
+  if (typeof document === 'undefined') return
+  for (const element of document.body.querySelectorAll('[id^="dquickforge-mermaid-"]')) {
+    element.remove()
+  }
+}
+
+export function getMermaidErrorMessage(error: unknown) {
+  if (typeof error === 'string') return error.trim()
+  const message = (error as { message?: unknown } | null | undefined)?.message
+  return typeof message === 'string' && message.trim() ? message.trim() : ''
 }
 
 export async function renderMermaidSvg(source: string) {
@@ -47,7 +63,12 @@ export async function renderMermaidSvg(source: string) {
 
   const mermaid = await loadMermaid()
   const renderId = `quickforge-mermaid-${Date.now().toString(36)}-${++renderSequence}`
-  const { svg } = await mermaid.render(renderId, normalized)
-  if (!isSafeMermaidSvg(svg)) throw new Error('Unsafe Mermaid SVG output')
-  return svg
+  try {
+    const { svg } = await mermaid.render(renderId, normalized)
+    if (!isSafeMermaidSvg(svg)) throw new Error('Unsafe Mermaid SVG output')
+    return svg
+  } catch (error) {
+    removeMermaidTempElements()
+    throw error
+  }
 }
