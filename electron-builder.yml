@@ -13,6 +13,7 @@ files:
   - electron/**
   - server-core.mjs
   - asset-endpoint.mjs
+  - fs-endpoint.mjs
   - dist/**
   - package.json
   # 托盘图标随包携带（生产环境 build/ 不会整体打包）
@@ -33,6 +34,17 @@ win:
     - target: nsis
       arch:
         - x64
+# 文件关联（右键“打开方式”）：注册 ProgId + OpenWithProgids，
+# NoteFlow 出现在 .md/.markdown 的“打开方式”列表，不抢占系统默认程序。
+fileAssociations:
+  - ext: md
+    name: NoteFlow Markdown
+    description: Markdown 文档
+    role: Editor
+  - ext: markdown
+    name: NoteFlow Markdown
+    description: Markdown 文档
+    role: Editor
 nsis:
   oneClick: false
   perMachine: false

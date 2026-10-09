@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { ChevronDown, FolderPlus, FolderOpen, ExternalLink, Trash2 } from 'lucide-react'
+import { ChevronDown, FolderPlus, FolderOpen, ExternalLink, Monitor, Trash2, X } from 'lucide-react'
 import type { ProjectInfo } from '../lib/types'
 
 type Props = {
@@ -26,13 +26,18 @@ function timeAgo(iso?: string): string {
 
 /**
  * 顶栏项目选择器：下拉列出最近项目（按最近打开排序）。
- * - 点击项目 = 当前窗口切换
- * - 每项右侧按钮 = 在新窗口打开（Electron 下同项目已有窗口则聚焦）/ 从列表移除
+ * - 点击项目 = 行内展开打开方式二选一：在当前窗口打开 / 在新窗口打开
+ * - 每项右侧快捷按钮 = 直接在新窗口打开（同项目已有窗口则聚焦）/ 从列表移除
  * - 底部"添加项目…" = 对话框粘贴路径或浏览目录注册新项目
  */
 export function ProjectPicker({ current, projects, onSelect, onOpenInWindow, onAdd, onRemove, onMenuOpen }: Props) {
   const [open, setOpen] = useState(false)
+  const [menuFor, setMenuFor] = useState<ProjectInfo | null>(null)
   const rootRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) setMenuFor(null)
+  }, [open])
 
   useEffect(() => {
     if (!open) return
@@ -77,6 +82,50 @@ export function ProjectPicker({ current, projects, onSelect, onOpenInWindow, onA
           <div className="max-h-72 overflow-y-auto">
             {recent.map((project) => {
               const active = project.id === current.id
+              const expanded = !active && menuFor?.id === project.id
+              if (expanded) {
+                return (
+                  <div key={project.id} className="my-0.5 rounded-md bg-muted/70 p-1">
+                    <div className="flex items-center gap-2 px-1 pb-1 pt-0.5">
+                      <FolderOpen className="size-3.5 shrink-0 text-indigo-500 dark:text-indigo-400" />
+                      <span className="min-w-0 flex-1 truncate text-[11px] font-medium text-foreground" title={project.path}>
+                        {project.name}
+                      </span>
+                      <button
+                        type="button"
+                        title="取消"
+                        className="rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground"
+                        onClick={() => setMenuFor(null)}
+                      >
+                        <X className="size-3.5" />
+                      </button>
+                    </div>
+                    <button
+                      type="button"
+                      className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-[12px] text-foreground/90 transition-colors hover:bg-background hover:text-foreground"
+                      onClick={() => {
+                        setOpen(false)
+                        onSelect(project)
+                      }}
+                    >
+                      <Monitor className="size-3.5 text-muted-foreground" />
+                      在当前窗口打开
+                    </button>
+                    <button
+                      type="button"
+                      className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-[12px] text-foreground/90 transition-colors hover:bg-background hover:text-foreground"
+                      onClick={() => {
+                        setOpen(false)
+                        onOpenInWindow(project.id)
+                      }}
+                    >
+                      <ExternalLink className="size-3.5 text-muted-foreground" />
+                      在新窗口打开
+                    </button>
+                    <p className="px-2 pb-0.5 pt-1 text-[10px] text-muted-foreground/70">同项目已有窗口时将聚焦该窗口</p>
+                  </div>
+                )
+              }
               return (
                 <div
                   key={project.id}
@@ -86,8 +135,11 @@ export function ProjectPicker({ current, projects, onSelect, onOpenInWindow, onA
                     type="button"
                     className="flex min-w-0 flex-1 items-center gap-2 text-left"
                     onClick={() => {
-                      setOpen(false)
-                      if (!active) onSelect(project)
+                      if (active) {
+                        setOpen(false)
+                        return
+                      }
+                      setMenuFor((prev) => (prev?.id === project.id ? null : project))
                     }}
                   >
                     <FolderOpen className={`size-3.5 shrink-0 ${active ? 'text-indigo-500 dark:text-indigo-400' : 'text-muted-foreground'}`} />

@@ -220,6 +220,8 @@ const SUBSCRIBED_EVENTS = new Set([
   'tool_execution_update',
   'tool_execution_end',
   'background_commands',
+  // noteflow: surface-agent 适配器在思考等级等会话级状态变化时发出，用于刷新快照
+  'agent_state_changed',
 ])
 
 export const CHAT_SURFACE_REFRESH_EVENTS = SUBSCRIBED_EVENTS
@@ -940,6 +942,9 @@ export const ChatSurface = forwardRef<WindowedChatSurfaceHandle, WindowedChatSur
                   enableThinkingSelector
                     ? (level) => {
                         agent.state.thinkingLevel = level
+                        // noteflow: 适配器把思考等级同步到 quickforge 服务端（会话级持久化）
+                        const sync = (agent as { updateThinkingLevel?: (level: ThinkingLevel) => void }).updateThinkingLevel
+                        sync?.call(agent, level)
                       }
                     : undefined
                 }

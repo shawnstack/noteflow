@@ -1,4 +1,5 @@
 import type { AiTurnArtifact } from '@/lib/tool-artifacts'
+import { fileKindFromPath } from '@/lib/file-kind'
 
 export type ArtifactKind = 'html' | 'image' | 'markdown' | 'code' | 'pdf' | 'docx' | 'excel' | 'unknown'
 export type DocumentFormat = 'pdf' | 'docx' | 'excel'
@@ -23,18 +24,14 @@ export function artifactFileName(path: string) {
   return normalized.split('/').filter(Boolean).pop() || normalized || 'artifact'
 }
 
+/**
+ * 扩展名 → 产物 kind。规则唯一来源是 `src/lib/file-kind.ts`
+ * （`binary`/`unknown` 对产物列表统一折叠为 `unknown`——产物预览不支持二进制）。
+ * 注意：`.mdx` 按 code 处理（file-kind 统一裁定）。
+ */
 export function inferArtifactKind(path: string): ArtifactKind {
-  const lower = path.toLowerCase()
-  const fileName = lower.replace(/\\/g, '/').split('/').pop() || lower
-  if (lower.endsWith('.html') || lower.endsWith('.htm')) return 'html'
-  if (lower.endsWith('.pdf')) return 'pdf'
-  if (lower.endsWith('.docx')) return 'docx'
-  if (/\.(xls|xlsx)$/i.test(lower)) return 'excel'
-  if (/\.(svg|png|jpe?g|webp|gif|ico)$/i.test(lower)) return 'image'
-  if (/\.(md|mdx|markdown)$/i.test(lower)) return 'markdown'
-  if (fileName === 'dockerfile' || fileName.endsWith('.dockerfile') || fileName === 'makefile') return 'code'
-  if (/\.(ts|tsx|js|jsx|mjs|cjs|css|scss|less|json|jsonc|txt|csv|tsv|log|sql|xml|yml|yaml|toml|ini|py|rb|go|rs|java|swift|kt|kts|c|h|cpp|hpp|cs|php|sh|bash|zsh|ps1)$/i.test(lower)) return 'code'
-  return 'unknown'
+  const kind = fileKindFromPath(path)
+  return kind === 'binary' || kind === 'unknown' ? 'unknown' : kind
 }
 
 export function documentFormatFromPath(path: string): DocumentFormat | undefined {

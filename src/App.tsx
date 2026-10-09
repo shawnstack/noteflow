@@ -182,9 +182,27 @@ export default function App() {
         setTabs([])
         setSelectedPath(null)
       }
+      // 右键“打开方式”冷启动：URL 带 ?file=<相对路径>，恢复流程完成后定位到该文件
+      const urlFile = new URLSearchParams(window.location.search).get('file')
+      if (urlFile) {
+        openPath(urlFile)
+        // 用完即从地址栏移除，刷新/重载不重复打开
+        const url = new URL(window.location.href)
+        url.searchParams.delete('file')
+        history.replaceState(null, '', url)
+      }
       suppressPersistRef.current = false
     })()
   }, [project])
+
+  // 主进程推送“打开方式”文件（同项目窗口已开时二次右键打开，无需重载页面）
+  useEffect(() => {
+    const bridge = getDesktopBridge()
+    if (!bridge?.onOpenFile) return
+    return bridge.onOpenFile((relPath) => {
+      if (typeof relPath === 'string' && relPath) openPath(relPath)
+    })
+  }, [openPath])
 
   /* ---------- 项目切换（一窗口一项目；切换即重置本窗口工作区，组件树按 key 重挂载） ---------- */
   const applyProject = useCallback((next: ProjectInfo, nextProjects?: ProjectInfo[]) => {

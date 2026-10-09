@@ -41,7 +41,12 @@ import { extractWikiTargets, resolveWikiTarget, transformWikiLinks, wikiComplete
 import { moveToTrash, renamePath, restoreFromTrash, TRASH_DIR } from '../lib/file-ops'
 import { matchesShortcut, useShortcuts } from '../lib/shortcuts'
 import { MarkdownReader } from './workspace/MarkdownReader'
-import { isBrowserPreviewablePath, workspacePreviewUrl } from './workspace/artifact-preview-utils'
+import { CodeReader } from './workspace/CodeReader'
+import { ImageReader } from './workspace/ImageReader'
+import { HtmlReader } from './workspace/HtmlReader'
+import { DocumentReader } from './workspace/DocumentReader'
+import { isTextEditableKind, languageFromPath, languageFromShebangContent, refineFileKind, type FileKind } from '../lib/file-kind'
+import { extractCodeSymbols } from '../lib/code-symbols'
 import { useDialog } from './Dialog'
 import { useToast } from './Toast'
 import { countWords } from '../lib/types'
@@ -111,6 +116,9 @@ export function NoteEditor({ projectId, path, onSaved, onContentChange, onFileMo
   const [backlinksOpen, setBacklinksOpen] = useState(true)
   const [outlineOpen, setOutlineOpen] = useState(false)
   const [pendingAi, setPendingAi] = useState<{ start: number; end: number; text: string; action: AskAction; at: number } | null>(null)
+  /** 智能识别的文件类型（路径 + 内容嗅探，见 lib/file-kind.ts） */
+  const [kind, setKind] = useState<FileKind>('markdown')
+  const [fileSize, setFileSize] = useState<number | null>(null)
   const pathRef = useRef(path)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const previewRef = useRef<HTMLDivElement>(null)
@@ -123,6 +131,9 @@ export function NoteEditor({ projectId, path, onSaved, onContentChange, onFileMo
   const toast = useToast()
   const dialog = useDialog()
   const inTrash = path !== null && path.startsWith(`${TRASH_DIR}/`)
+  /** 智能识别结果派生：文本类才提供编辑/分屏/保存；code 走 CodeReader + 符号大纲 */
+  const canEdit = isTextEditableKind(kind)
+  const isCodeKind = kind === 'code'
 
   const reload = useCallback(
     async (target: string) => {
@@ -132,6 +143,8 @@ export function NoteEditor({ projectId, path, onSaved, onContentChange, onFileMo
       setDraft(data.content)
       setLanguage(data.language || 'markdown')
       setSavedMtime(data.mtimeMs)
+      setKind(refineFileKind(target, data.content))
+      setFileSize(data.size)
       setIsNew(false)
       setExternalChanged(false)
       clearDraft(projectId, target)
@@ -169,6 +182,9 @@ export function NoteEditor({ projectId, path, onSaved, onContentChange, onFileMo
         if (cancelled || pathRef.current !== path) return
         setContent(data.content)
         setSavedMtime(data.mtimeMs)
+        const nextKind = refineFileKind(path, data.content)
+        setKind(nextKind)
+        setFileSize(data.size)
         setIsNew(false)
         // 崩溃草稿恢复
         const saved = readDraft(projectId, path)
@@ -184,11 +200,14 @@ export function NoteEditor({ projectId, path, onSaved, onContentChange, onFileMo
       })
       .catch(() => {
         if (cancelled) return
-        // 文件尚不存在（新建流程）：进入空白编辑态
+        // 文件尚不存在（新建流程）：进入空白编辑态（仅文本类，文档/二进制锁定阅读）
         setContent('')
         setDraft('')
+        const nextKind = refineFileKind(path, '')
+        setKind(nextKind)
+        setFileSize(null)
         setIsNew(true)
-        setMode('edit')
+        setMode(isTextEditableKind(nextKind) ? 'edit' : 'read')
       })
       .finally(() => {
         if (!cancelled) setLoading(false)
@@ -356,6 +375,40 @@ export function NoteEditor({ projectId, path, onSaved, onContentChange, onFileMo
       ta.focus()
       ta.setSelectionRange(selStart, selEnd)
     })
+  }
+
+  /** 代码文件编辑增强：Tab/Shift+Tab 缩进、Enter 保持缩进（markdown 不劫持 Tab，保留焦点移动） */
+  const handleCodeEditorKeys = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (composingRef.current) return
+    const ta = event.currentTarget
+    const { selectionStart: s, selectionEnd: e, value } = ta
+    if (event.key === 'Tab') {
+      event.preventDefault()
+      if (event.shiftKey) {
+        const lineStart = value.lastIndexOf('\n', s - 1) + 1
+        if (value.startsWith('\t', lineStart)) {
+          const next = value.slice(0, lineStart) + value.slice(lineStart + 1)
+          withSelection(next, Math.max(lineStart, s - 1), Math.max(lineStart, e - 1))
+        } else if (value.startsWith('  ', lineStart)) {
+          const next = value.slice(0, lineStart) + value.slice(lineStart + 2)
+          withSelection(next, Math.max(lineStart, s - 2), Math.max(lineStart, e - 2))
+        }
+      } else {
+        const next = `${value.slice(0, s)}  ${value.slice(Math.max(s, e))}`
+        withSelection(next, s + 2, s + 2)
+      }
+      return
+    }
+    if (event.key === 'Enter' && !event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey) {
+      const lineStart = value.lastIndexOf('\n', s - 1) + 1
+      const indent = /^[ \t]*/.exec(value.slice(lineStart, s))?.[0] ?? ''
+      if (indent) {
+        event.preventDefault()
+        const insert = `\n${indent}`
+        const next = `${value.slice(0, s)}${insert}${value.slice(Math.max(s, e))}`
+        withSelection(next, s + insert.length, s + insert.length)
+      }
+    }
   }
 
   const wrapSelection = (before: string, after = before) => {
@@ -632,6 +685,26 @@ export function NoteEditor({ projectId, path, onSaved, onContentChange, onFileMo
     headings[index]?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 
+  /* ---------- 代码文件：符号大纲 + 阅读语言 ---------- */
+  const codeLanguage = useMemo(() => {
+    if (language && language !== 'plaintext') return language
+    return languageFromPath(path ?? '') ?? languageFromShebangContent(content) ?? 'plaintext'
+  }, [language, path, content])
+
+  const codeSymbols = useMemo(
+    () => (isCodeKind ? extractCodeSymbols(draft || content, codeLanguage) : []),
+    [isCodeKind, draft, content, codeLanguage],
+  )
+
+  const scrollToCodeLine = (line: number) => {
+    previewRef.current?.querySelector(`[data-line="${line}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+
+  // 非文本类（图片/文档/二进制）锁定阅读模式（按钮也已隐藏，此处兜底切换残留状态）
+  useEffect(() => {
+    if (!canEdit && mode !== 'read') setMode('read')
+  }, [canEdit, mode])
+
   if (!path) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 text-muted-foreground/70">
@@ -643,6 +716,20 @@ export function NoteEditor({ projectId, path, onSaved, onContentChange, onFileMo
   }
 
   const words = countWords(draft)
+  const lineCount = isCodeKind || kind === 'html' ? (draft || content).split('\n').length : 0
+  /** 状态区文案：md=字数，代码/HTML=行数(·语言)，其余=文件大小 */
+  const statsLabel =
+    isCodeKind || kind === 'html'
+      ? lineCount > 0
+        ? `${lineCount} 行${isCodeKind && codeLanguage !== 'plaintext' ? ` · ${codeLanguage}` : ''}`
+        : '已保存'
+      : kind === 'markdown'
+        ? words > 0
+          ? `${words} 字`
+          : '已保存'
+        : fileSize !== null
+          ? formatBytes(fileSize)
+          : '已保存'
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -659,13 +746,23 @@ export function NoteEditor({ projectId, path, onSaved, onContentChange, onFileMo
         )}
         {draftRestored && <span className="shrink-0 text-[11px] text-amber-500 dark:text-amber-400">已恢复未保存草稿</span>}
         {dirty && !draftRestored && <span className="shrink-0 text-[11px] text-amber-500 dark:text-amber-400">未保存</span>}
-        {!dirty && <span className="shrink-0 text-[11px] text-muted-foreground/70">{words > 0 ? `${words} 字` : '已保存'}</span>}
+        {!dirty && <span className="shrink-0 text-[11px] text-muted-foreground/70">{statsLabel}</span>}
         <div className="flex shrink-0 items-center gap-1">
           <ModeButton active={mode === 'read'} onClick={() => setMode('read')} title="阅读" icon={<BookOpen className="size-4" />} />
-          <ModeButton active={mode === 'edit'} onClick={() => setMode('edit')} title="编辑" icon={<Pencil className="size-4" />} />
-          <ModeButton active={mode === 'split'} onClick={() => setMode('split')} title="分屏" icon={<Columns2 className="size-4" />} />
+          {canEdit && <ModeButton active={mode === 'edit'} onClick={() => setMode('edit')} title="编辑" icon={<Pencil className="size-4" />} />}
+          {canEdit && <ModeButton active={mode === 'split'} onClick={() => setMode('split')} title="分屏" icon={<Columns2 className="size-4" />} />}
+          {(isMarkdownNote || isCodeKind) && (
+            <>
+              <span className="mx-1 h-4 w-px bg-border" />
+              <ModeButton
+                active={outlineOpen}
+                onClick={() => setOutlineOpen((v) => !v)}
+                title={isMarkdownNote ? '大纲导航' : '符号大纲'}
+                icon={<ListTree className="size-4" />}
+              />
+            </>
+          )}
           <span className="mx-1 h-4 w-px bg-border" />
-          <ModeButton active={outlineOpen} onClick={() => setOutlineOpen((v) => !v)} title="大纲导航" icon={<ListTree className="size-4" />} />
           {!inTrash && <ModeButton active={false} onClick={() => path && onOpenHistory?.(path)} title="版本历史" icon={<History className="size-4" />} />}
           {inTrash ? (
             <ModeButton active={false} onClick={() => void restoreFile()} title="从回收站恢复" icon={<RotateCcw className="size-4" />} />
@@ -675,20 +772,22 @@ export function NoteEditor({ projectId, path, onSaved, onContentChange, onFileMo
               <ModeButton active={false} onClick={() => void trashFile()} title="移入回收站" icon={<Trash2 className="size-4" />} />
             </>
           )}
-          <button
-            type="button"
-            onClick={() => void save()}
-            disabled={!dirty || saving}
-            className="ml-2 flex items-center gap-1.5 rounded bg-accent px-2.5 py-1 text-xs text-foreground hover:bg-accent disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            <Save className="size-3.5" />
-            {saving ? '保存中…' : '保存'}
-          </button>
+          {canEdit && (
+            <button
+              type="button"
+              onClick={() => void save()}
+              disabled={!dirty || saving}
+              className="ml-2 flex items-center gap-1.5 rounded bg-accent px-2.5 py-1 text-xs text-foreground hover:bg-accent disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <Save className="size-3.5" />
+              {saving ? '保存中…' : '保存'}
+            </button>
+          )}
         </div>
       </div>
 
-      {/* 编辑工具栏（仅编辑/分屏模式） */}
-      {mode !== 'read' && (
+      {/* 编辑工具栏（仅 markdown 的编辑/分屏模式） */}
+      {mode !== 'read' && isMarkdownNote && (
         <div className="flex flex-wrap items-center gap-0.5 border-b border-border px-3 py-1.5">
           <ToolButton title="标题 1" onClick={() => prefixLines('# ')}>
             <Heading1 className="size-4" />
@@ -826,6 +925,8 @@ export function NoteEditor({ projectId, path, onSaved, onContentChange, onFileMo
                       setWikiMenu(null)
                       return
                     }
+                  } else if (!isMarkdownNote && canEdit) {
+                    handleCodeEditorKeys(event)
                   }
                 }}
                 onPaste={handlePaste}
@@ -853,7 +954,7 @@ export function NoteEditor({ projectId, path, onSaved, onContentChange, onFileMo
                 }}
                 onBlur={() => window.setTimeout(() => setWikiMenu(null), 120)}
                 spellCheck={false}
-                placeholder="# 开始书写…"
+                placeholder={isMarkdownNote ? '# 开始书写…' : ''}
                 className={`h-full w-full resize-none bg-transparent p-6 font-mono text-[13.5px] leading-7 text-foreground outline-none ${
                   mode === 'split' ? 'w-1/2 border-r border-border' : ''
                 }`}
@@ -862,28 +963,39 @@ export function NoteEditor({ projectId, path, onSaved, onContentChange, onFileMo
             {mode !== 'edit' && (
               <div className={`relative flex h-full min-w-0 flex-col ${mode === 'split' ? 'w-1/2' : 'w-full'}`}>
                 <div className="min-h-0 flex-1 overflow-y-auto" ref={previewRef}>
-                  {isBrowserPreviewablePath(path) ? (
-                    <div className="flex h-full items-center justify-center p-6">
-                      <img
-                        src={workspacePreviewUrl(projectId, path)}
-                        alt={path}
-                        className="max-h-full max-w-full rounded-xl border border-border object-contain"
-                      />
-                    </div>
+                  {kind === 'image' ? (
+                    <ImageReader projectId={projectId} path={path} />
+                  ) : kind === 'html' ? (
+                    <HtmlReader projectId={projectId} path={path} />
+                  ) : kind === 'pdf' || kind === 'docx' || kind === 'excel' ? (
+                    <DocumentReader projectId={projectId} path={path} format={kind} />
+                  ) : kind === 'binary' ? (
+                    <BinaryNotice path={path} size={fileSize} />
+                  ) : isCodeKind ? (
+                    <CodeReader path={path} content={previewContent} language={codeLanguage} />
+                  ) : kind === 'markdown' ? (
+                    <MarkdownReader
+                      projectId={projectId}
+                      path={path}
+                      content={previewContent}
+                      language={language}
+                      mode="preview"
+                      onOpenNote={handleOpenNoteLink}
+                    />
                   ) : (
                     <MarkdownReader
                       projectId={projectId}
                       path={path}
                       content={previewContent}
                       language={language}
-                      mode={isMarkdown(path) ? 'preview' : 'source'}
+                      mode="source"
                       onOpenNote={handleOpenNoteLink}
                     />
                   )}
                 </div>
 
-                {/* 大纲导航（H1-H3，点击滚动定位） */}
-                {outlineOpen && outline.length > 0 && (
+                {/* 大纲导航：markdown 标题树 / 代码符号树（点击滚动定位） */}
+                {outlineOpen && isMarkdownNote && outline.length > 0 && (
                   <div className="absolute right-0 top-0 z-10 flex h-full w-56 flex-col border-l border-border bg-background/95 shadow-sm backdrop-blur">
                     <p className="shrink-0 border-b border-border px-3 py-2 text-[11px] font-medium text-muted-foreground">大纲</p>
                     <div className="min-h-0 flex-1 overflow-y-auto p-1.5">
@@ -897,6 +1009,26 @@ export function NoteEditor({ projectId, path, onSaved, onContentChange, onFileMo
                           title={item.text}
                         >
                           {item.text}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {outlineOpen && isCodeKind && codeSymbols.length > 0 && (
+                  <div className="absolute right-0 top-0 z-10 flex h-full w-56 flex-col border-l border-border bg-background/95 shadow-sm backdrop-blur">
+                    <p className="shrink-0 border-b border-border px-3 py-2 text-[11px] font-medium text-muted-foreground">符号大纲</p>
+                    <div className="min-h-0 flex-1 overflow-y-auto p-1.5">
+                      {codeSymbols.map((symbol, index) => (
+                        <button
+                          key={`${symbol.kind}-${symbol.name}-${symbol.line}-${index}`}
+                          type="button"
+                          style={{ paddingLeft: (symbol.level - 1) * 12 + 6 }}
+                          onClick={() => scrollToCodeLine(symbol.line)}
+                          className="flex w-full items-baseline gap-1.5 truncate rounded py-1 pr-2 text-left text-[12px] text-muted-foreground hover:bg-muted hover:text-foreground"
+                          title={`${symbol.kind} · 第 ${symbol.line} 行`}
+                        >
+                          <span className="shrink-0 font-mono text-[10px] uppercase text-muted-foreground/50">{symbolKindGlyph(symbol.kind)}</span>
+                          <span className="truncate font-mono">{symbol.name}</span>
                         </button>
                       ))}
                     </div>
@@ -1047,4 +1179,56 @@ function Divider() {
 
 function isMarkdown(path: string): boolean {
   return /\.(md|markdown)$/i.test(path)
+}
+
+/** 符号大纲的紧凑字形（等宽、单字符宽度，避免挤占名称列）。 */
+function symbolKindGlyph(kind: string): string {
+  switch (kind) {
+    case 'class':
+      return 'C'
+    case 'interface':
+      return 'I'
+    case 'type':
+      return 'T'
+    case 'enum':
+      return 'E'
+    case 'struct':
+      return 'S'
+    case 'trait':
+      return 'R'
+    case 'variable':
+      return 'V'
+    case 'method':
+      return 'M'
+    case 'table':
+      return 'TB'
+    case 'view':
+      return 'VW'
+    case 'rule':
+      return '{ }'
+    default:
+      return 'ƒ'
+  }
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+  return `${(bytes / 1024 / 1024 / 1024).toFixed(1)} GB`
+}
+
+/** 二进制文件占位卡：内容嗅探判定为 binary 时中栏不渲染乱码文本。 */
+function BinaryNotice({ path, size }: { path: string; size: number | null }) {
+  return (
+    <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
+      <TriangleAlert className="size-8 text-muted-foreground/50" />
+      <p className="text-sm text-muted-foreground">二进制文件，暂不支持预览</p>
+      <p className="break-all text-xs text-muted-foreground/60">
+        {path}
+        {size !== null ? ` · ${formatBytes(size)}` : ''}
+      </p>
+      <p className="text-xs text-muted-foreground/50">可通过上方按钮重命名或移入回收站；文本编辑请先转换为文本格式。</p>
+    </div>
+  )
 }

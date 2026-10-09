@@ -17,7 +17,7 @@
  *     否则本进程内启动全套服务；端口被占时降级为随机端口。
  */
 import { app, BrowserWindow, Menu, Tray, dialog, ipcMain, nativeImage, nativeTheme, shell } from 'electron'
-import { join, resolve } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
 import { existsSync } from 'node:fs'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
@@ -29,11 +29,60 @@ const PORT = Number(process.env.NOTEFLOW_PORT || 5179)
 let nf = null // startNoteFlow() 的返回值
 let attached = false // true = 复用了外部已运行的服务（npm start），退出时不负责停服务
 let quitting = false
+// 后端是否就绪：second-instance 可能在 startBackend 完成前触发（首窗口还没建），
+// 此时 nf 仍为 null，直接建窗口会读 nf.url 崩溃 → 未就绪时忽略唤起
+let backendReady = false
 
 /** 项目 → 窗口映射（一窗口一项目：同项目再开窗口 = 聚焦已有窗口） */
 const projectWindows = new Map()
 let lastFocusedWindow = null
 let tray = null // 系统托盘（常驻引用，防 GC 回收）
+
+/* ---------- 右键“打开方式”传入的 markdown 文件 ---------- */
+
+const MARKDOWN_FILE_RE = /\.(md|markdown)$/i
+// backendReady 之前收到的打开请求（second-instance / open-file 可能早于后端就绪）
+let pendingOpenFile = null
+
+/**
+ * 从 argv 中提取 markdown 文件路径（Windows 双击 / 右键“打开方式”时文件路径在 argv 里）。
+ * 跳过开关参数与本模块路径，返回绝对路径；没有则 null。
+ */
+function extractMarkdownPath(argv) {
+  if (!Array.isArray(argv)) return null
+  for (let i = 1; i < argv.length; i++) {
+    const arg = argv[i]
+    if (typeof arg !== 'string' || !arg || arg.startsWith('-')) continue
+    if (basename(arg) === 'main.mjs') continue // 开发模式 argv[1] 是本入口脚本
+    if (MARKDOWN_FILE_RE.test(arg)) return resolve(arg)
+  }
+  return null
+}
+
+/** 主进程直调后端 API 的基地址（dev: 直连 quickforge；生产: 静态服务反代 /api；attach: 外部服务） */
+function apiBase() {
+  if (attached) return `http://127.0.0.1:${PORT}`
+  return nf?.url || nf?.qf?.url || ''
+}
+
+/**
+ * “打开方式”入口：把文件所在目录注册为项目（幂等、自动激活），
+ * 打开（或聚焦）该项目的窗口并定位到该文件。
+ */
+async function openMarkdownFile(filePath) {
+  const base = apiBase()
+  if (!base) throw new Error('后端服务未就绪')
+  const res = await fetch(`${base}/api/project/path`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ path: dirname(filePath) }),
+  })
+  if (!res.ok) throw new Error(`注册项目失败: HTTP ${res.status}`)
+  const bundle = await res.json().catch(() => null)
+  const projectId = bundle?.project?.id
+  if (!projectId) throw new Error(`注册项目失败: ${dirname(filePath)}`)
+  createWindow({ projectId, openFile: basename(filePath) })
+}
 
 const log = (tag, msg = '') => console.log(`[noteflow-electron] ${tag}${msg ? ` ${msg}` : ''}`)
 
@@ -98,7 +147,7 @@ function buildMenu() {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template))
 }
 
-function createWindow({ projectId } = {}) {
+function createWindow({ projectId, openFile } = {}) {
   // 一窗口一项目：该项目已有窗口则聚焦，不再新建
   if (projectId && projectWindows.has(projectId)) {
     const existing = projectWindows.get(projectId)
@@ -106,6 +155,10 @@ function createWindow({ projectId } = {}) {
       if (existing.isMinimized()) existing.restore()
       existing.show()
       existing.focus()
+      // 已开窗口时通过 IPC 让页面直接打开该文件（不用重载页面）
+      if (openFile && !existing.webContents.isLoading()) {
+        existing.webContents.send('noteflow:open-file', openFile)
+      }
       return existing
     }
     projectWindows.delete(projectId)
@@ -145,9 +198,14 @@ function createWindow({ projectId } = {}) {
   w.on('maximize', sendMaximized)
   w.on('unmaximize', sendMaximized)
 
-  // 多窗口项目绑定：?project=<id> 由渲染层读取（刷新后仍保持绑定）
+  // 多窗口项目绑定：?project=<id> 由渲染层读取（刷新后仍保持绑定）；
+  // ?file=<相对路径> 由“打开方式”入口注入，页面就绪后定位到该笔记
   const base = DEV_URL || (attached ? `http://127.0.0.1:${PORT}` : nf.url)
-  const target = projectId ? `${base}${base.includes('?') ? '&' : '?'}project=${encodeURIComponent(projectId)}` : base
+  const params = new URLSearchParams()
+  if (projectId) params.set('project', projectId)
+  if (openFile) params.set('file', openFile)
+  const qs = params.toString()
+  const target = qs ? `${base}${base.includes('?') ? '&' : '?'}${qs}` : base
   log('加载窗口', target)
   w.loadURL(target).catch((err) => {
     dialog.showErrorBox('NoteFlow', `页面加载失败: ${err?.message || err}`)
@@ -226,8 +284,33 @@ function applyTitleBarTheme(w, theme) {
 }
 
 async function main() {
-  app.on('second-instance', () => {
+  // 二次唤起（单实例锁下新进程把 argv 转给首实例）：右键“打开方式”传文件 → 打开它
+  app.on('second-instance', (_event, argv) => {
+    const filePath = extractMarkdownPath(argv)
+    if (!backendReady) {
+      if (filePath) pendingOpenFile = filePath // 首窗口由主流程稍后创建，记录待打开文件
+      return
+    }
+    if (filePath) {
+      openMarkdownFile(filePath).catch((err) => {
+        log('打开文件失败', String(err?.message || err))
+        dialog.showErrorBox('NoteFlow', `打开文件失败: ${err?.message || err}`)
+        focusOrCreateWindow()
+      })
+      return
+    }
     focusOrCreateWindow()
+  })
+
+  // mac：Finder 双击 / 拖到 dock 图标（argv 不含文件，必须走 open-file 事件）
+  app.on('open-file', (event, filePath) => {
+    event.preventDefault()
+    if (typeof filePath !== 'string' || !MARKDOWN_FILE_RE.test(filePath)) return
+    if (backendReady) {
+      openMarkdownFile(filePath).catch((err) => log('打开文件失败', String(err?.message || err)))
+    } else {
+      pendingOpenFile = filePath
+    }
   })
 
   await app.whenReady()
@@ -262,7 +345,21 @@ async function main() {
   })
   buildMenu()
   await startBackend()
-  createWindow()
+  backendReady = true
+  // 启动即带文件（右键“打开方式”冷启动）或后端就绪前暂存的打开请求
+  const initialFile = extractMarkdownPath(process.argv) || pendingOpenFile
+  pendingOpenFile = null
+  if (initialFile) {
+    try {
+      await openMarkdownFile(initialFile)
+    } catch (err) {
+      log('打开文件失败', String(err?.message || err))
+      dialog.showErrorBox('NoteFlow', `打开文件失败: ${err?.message || err}`)
+      createWindow()
+    }
+  } else {
+    createWindow()
+  }
   createTray()
 
   app.on('activate', () => {

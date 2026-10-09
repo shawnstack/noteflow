@@ -1,4 +1,5 @@
 import type { AgentMessage } from '@earendil-works/pi-agent-core'
+import { fileKindFromPath } from './file-kind'
 
 export type AiTurnArtifactKind = 'html' | 'image' | 'markdown' | 'code' | 'pdf' | 'docx' | 'excel' | 'unknown'
 
@@ -57,17 +58,9 @@ function latestUserMessageIndex(messages: AgentMessage[]) {
 }
 
 function inferArtifactKind(path = ''): AiTurnArtifactKind {
-  const lower = path.toLowerCase()
-  const fileName = lower.replace(/\\/g, '/').split('/').pop() || lower
-  if (lower.endsWith('.html') || lower.endsWith('.htm')) return 'html'
-  if (lower.endsWith('.pdf')) return 'pdf'
-  if (lower.endsWith('.docx')) return 'docx'
-  if (/\.(xls|xlsx)$/.test(lower)) return 'excel'
-  if (/\.(svg|png|jpe?g|webp|gif|ico)$/i.test(lower)) return 'image'
-  if (/\.(md|mdx|markdown)$/i.test(lower)) return 'markdown'
-  if (fileName === 'dockerfile' || fileName.endsWith('.dockerfile') || fileName === 'makefile') return 'code'
-  if (/\.(ts|tsx|js|jsx|mjs|cjs|css|scss|less|json|jsonc|txt|csv|tsv|log|sql|xml|yml|yaml|toml|ini|py|rb|go|rs|java|swift|kt|kts|c|h|cpp|hpp|cs|php|sh|bash|zsh|ps1)$/i.test(lower)) return 'code'
-  return 'unknown'
+  // 规则唯一来源：src/lib/file-kind.ts（binary/unknown 折叠为 unknown）。
+  const kind = fileKindFromPath(path)
+  return kind === 'binary' || kind === 'unknown' ? 'unknown' : kind
 }
 
 function isPreviewableKind(kind: AiTurnArtifactKind) {

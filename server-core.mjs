@@ -26,6 +26,7 @@ import { existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { startQuickForge } from '@shawnstack/quickforge'
 import { createAssetEndpoint } from './asset-endpoint.mjs'
+import { createFsEndpoint } from './fs-endpoint.mjs'
 
 const ROOT = resolve(fileURLToPath(new URL('.', import.meta.url)))
 const DIST = join(ROOT, 'dist')
@@ -160,6 +161,8 @@ export async function startNoteFlow(options = {}) {
   }
 
   const handleAssetUpload = createAssetEndpoint({ notesDir })
+  // 跨平台文件操作（重命名 / 回收站 / 定位 / git 历史等）：projectId 由 quickforge 项目注册表解析
+  const handleFsApi = createFsEndpoint({ qfBase: base })
 
   const proxyApi = (req, res) => {
     const proxyReq = httpRequest(
@@ -198,6 +201,11 @@ export async function startNoteFlow(options = {}) {
     // 编辑器粘贴图片的二进制上传（quickforge write_file 只收 UTF-8，走自有端点）
     if (url.pathname === '/api/noteflow/asset') {
       await handleAssetUpload(req, res)
+      return
+    }
+    // 跨平台文件操作（Node fs 实现，macOS/Windows 通用）
+    if (url.pathname === '/api/noteflow/fs') {
+      await handleFsApi(req, res)
       return
     }
     if (url.pathname.startsWith('/api/')) {

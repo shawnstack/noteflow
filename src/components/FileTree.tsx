@@ -26,10 +26,9 @@ import {
   workspaceTreeReducer,
   workspaceTreeRefreshPaths,
 } from './workspace/workspace-tree-state'
-import { runCommand, shQuote } from '../lib/api'
-import { movePath, moveToTrash, renamePath, restoreFromTrash, revealInFinder, deletePermanently, emptyTrash, TRASH_DIR } from '../lib/file-ops'
+import { movePath, moveToTrash, renamePath, restoreFromTrash, revealInFileManager, deletePermanently, emptyTrash, createDirectory, TRASH_DIR } from '../lib/file-ops'
+import { getPlatform } from '../lib/desktop'
 import { formatShortcut, useShortcuts } from '../lib/shortcuts'
-import { ATTACH_NOTE_KEY, SETTINGS_EVENT } from './SettingsDialog'
 import { useDialog } from './Dialog'
 import { useToast } from './Toast'
 
@@ -51,6 +50,14 @@ type MenuTarget =
 type MenuState = { x: number; y: number; target: MenuTarget } | null
 
 type MenuItem = { label: string; icon: LucideIcon; danger?: boolean; onSelect: () => void } | { separator: true }
+
+/** 右键菜单「定位」文案随平台：Win 资源管理器 / macOS Finder / Linux 文件管理器 */
+const REVEAL_LABELS = (() => {
+  const platform = getPlatform()
+  const file = platform === 'win32' ? '在文件资源管理器中显示' : platform === 'darwin' ? '在 Finder 中显示' : '在文件管理器中显示'
+  const folder = platform === 'win32' ? '在文件资源管理器中打开' : platform === 'darwin' ? '在 Finder 中打开' : '在文件管理器中打开'
+  return { file, folder }
+})()
 
 /** 右键菜单浮层：fixed 定位 + 边界翻转，点击外部 / Escape / 滚动 / resize 自动关闭 */
 function FileContextMenu({ x, y, items, onClose }: {
@@ -233,7 +240,7 @@ export function FileTree({ projectId, selectedPath, onSelect, onCreated, onPathM
         { label: '新建文件夹', icon: FolderPlus, onSelect: () => startCreate('dir', '.') },
         { separator: true },
         { label: '刷新', icon: RefreshCw, onSelect: refreshTree },
-        { label: '在 Finder 中打开', icon: FolderOpen, onSelect: () => void revealTarget('.', 'root') },
+        { label: REVEAL_LABELS.folder, icon: FolderOpen, onSelect: () => void revealTarget('.', 'root') },
       )
     } else if (target.kind === 'directory' && target.path === TRASH_DIR) {
       // 回收站目录本身：清空 + 常规目录操作
@@ -241,13 +248,13 @@ export function FileTree({ projectId, selectedPath, onSelect, onCreated, onPathM
         { label: '清空回收站', icon: Trash2, danger: true, onSelect: () => void emptyTrashConfirm() },
         { separator: true },
         { label: '刷新', icon: RefreshCw, onSelect: refreshTree },
-        { label: '在 Finder 中打开', icon: FolderOpen, onSelect: () => void revealTarget(target.path, target.kind) },
+        { label: REVEAL_LABELS.folder, icon: FolderOpen, onSelect: () => void revealTarget(target.path, target.kind) },
       )
     } else if (target.path.startsWith(`${TRASH_DIR}/`)) {
       menuItems.push(
         { label: '恢复到根目录', icon: RotateCcw, onSelect: () => void restoreTarget(target.path) },
         { label: '重命名', icon: PencilLine, onSelect: () => void renameTarget(target.path) },
-        { label: '在 Finder 中显示', icon: FolderOpen, onSelect: () => void revealTarget(target.path, target.kind) },
+        { label: REVEAL_LABELS.file, icon: FolderOpen, onSelect: () => void revealTarget(target.path, target.kind) },
         { separator: true },
         { label: '彻底删除（不可恢复）', icon: Trash2, danger: true, onSelect: () => void destroyTarget(target.path) },
       )
@@ -258,7 +265,7 @@ export function FileTree({ projectId, selectedPath, onSelect, onCreated, onPathM
         { separator: true },
         { label: '重命名', icon: PencilLine, onSelect: () => void renameTarget(target.path) },
         { label: '复制路径', icon: Copy, onSelect: () => void copyPath(target.path) },
-        { label: '在 Finder 中打开', icon: FolderOpen, onSelect: () => void revealTarget(target.path, target.kind) },
+        { label: REVEAL_LABELS.folder, icon: FolderOpen, onSelect: () => void revealTarget(target.path, target.kind) },
         { separator: true },
         { label: '删除（移入回收站）', icon: Trash2, danger: true, onSelect: () => void trashTarget(target.path, target.kind) },
       )
@@ -270,7 +277,7 @@ export function FileTree({ projectId, selectedPath, onSelect, onCreated, onPathM
       menuItems.push(
         { label: '重命名', icon: PencilLine, onSelect: () => void renameTarget(target.path) },
         { label: '复制路径', icon: Copy, onSelect: () => void copyPath(target.path) },
-        { label: '在 Finder 中显示', icon: FolderOpen, onSelect: () => void revealTarget(target.path, target.kind) },
+        { label: REVEAL_LABELS.file, icon: FolderOpen, onSelect: () => void revealTarget(target.path, target.kind) },
         { separator: true },
         { label: '移入回收站', icon: Trash2, danger: true, onSelect: () => void trashTarget(target.path, 'file') },
       )
@@ -376,18 +383,16 @@ export function FileTree({ projectId, selectedPath, onSelect, onCreated, onPathM
 
   const revealTarget = async (path: string, kind: 'file' | 'directory' | 'root') => {
     try {
-      await revealInFinder(projectId, path, kind)
+      await revealInFileManager(projectId, path, kind)
     } catch (error) {
       toast.error(`打开失败：${error instanceof Error ? error.message : String(error)}`)
     }
   }
 
-  /** 选中笔记并确保「发送时附带笔记」开启，然后直接去聊天 */
+  /** 选中笔记并直接去聊天（默认不附带笔记内容；需要附带时在对话栏点亮回形针） */
   const chatWithNote = (path: string) => {
     onSelect(path)
-    localStorage.setItem(ATTACH_NOTE_KEY, '1')
-    window.dispatchEvent(new Event(SETTINGS_EVENT))
-    toast.success('已选中，发送消息时将附带此笔记')
+    toast.success('已选中，可在对话栏点亮回形针附带此笔记')
   }
 
   /* ---------- 拖拽移动（宿主层冒泡捕获，与右键菜单同模式：行按钮 title 即节点路径） ---------- */
@@ -454,7 +459,7 @@ export function FileTree({ projectId, selectedPath, onSelect, onCreated, onPathM
         .join('/')
       if (!dirPath) return
       try {
-        await runCommand(projectId, `mkdir -p ${shQuote(dirPath)}`)
+        await createDirectory(projectId, dirPath)
         onTreeChange()
         toast.success(`已创建文件夹 ${dirPath}`)
       } catch (error) {

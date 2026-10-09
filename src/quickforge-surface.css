@@ -2823,3 +2823,70 @@ html.dark {
   --sidebar-border: oklch(0.275 0 0);
   --sidebar-ring: oklch(0.439 0 0);
 }
+
+
+/* ===== 工具审批卡（移植自 quickforge v2.2.0 index-CFRkAwVo.css，类名与结构保持原样） ===== */
+.quickforge-approval-card{border:1px solid var(--border);border-radius:calc(var(--radius) + .125rem);background:var(--background);margin:0 1rem 1rem;position:relative;overflow:hidden}
+@supports (color:color-mix(in lab, red, red)){.quickforge-approval-card{background:color-mix(in oklab, var(--background) 96%, var(--muted))}}
+
+.quickforge-approval-card{pointer-events:auto;box-shadow:0 1px 2px #0f172a0a}
+.quickforge-approval-card:before{background:var(--quickforge-approval-tone,#d97706);content:"";width:3px;position:absolute;inset:0 auto 0 0}
+.quickforge-approval-card--warning{--quickforge-approval-tone:#d97706}
+.quickforge-approval-card--info{--quickforge-approval-tone:#3478d4}
+.quickforge-approval-body{padding:.875rem .9375rem .8125rem 1.0625rem}
+.quickforge-approval-status-row,.quickforge-approval-actions,.quickforge-approval-status,.quickforge-approval-badges,.quickforge-approval-impact-row,.quickforge-approval-details-toggle{align-items:center;display:flex}
+.quickforge-approval-status-row{justify-content:space-between;gap:.75rem;margin-bottom:.75rem}
+.quickforge-approval-status{color:var(--quickforge-approval-tone);gap:.4375rem;font-size:.75rem;font-weight:650}
+.quickforge-approval-status svg,.quickforge-approval-details-toggle svg{fill:none;stroke:currentColor;stroke-linecap:round;stroke-linejoin:round;stroke-width:2px;width:1rem;height:1rem}
+.quickforge-approval-badges{justify-content:flex-end;gap:.3125rem;min-width:0}
+.quickforge-approval-badge{background:var(--muted);max-width:8rem;color:var(--muted-foreground);text-overflow:ellipsis;white-space:nowrap;border-radius:999px;padding:.1875rem .4375rem;font-size:.6875rem;line-height:1;overflow:hidden}
+.quickforge-approval-title{color:var(--foreground);margin:0;font-size:.9375rem;font-weight:650;line-height:1.35}
+.quickforge-approval-risk{color:var(--muted-foreground);margin:.25rem 0 .75rem;font-size:.75rem;line-height:1.55}
+.quickforge-approval-impact{border:1px solid var(--border);border-radius:var(--radius);background:var(--muted);padding:.625rem .6875rem}
+@supports (color:color-mix(in lab, red, red)){.quickforge-approval-impact{background:color-mix(in oklab, var(--muted) 42%, var(--background))}}
+
+.quickforge-approval-impact-row{color:var(--muted-foreground);gap:.4375rem;margin-bottom:.375rem;font-size:.75rem}
+.quickforge-approval-impact-row:last-child{margin-bottom:0}
+.quickforge-approval-impact-row strong{overflow-wrap:anywhere;min-width:0;color:var(--foreground);font-weight:560}
+.quickforge-approval-code{max-height:10rem;color:var(--foreground);font-family:var(--font-mono);white-space:pre-wrap;word-break:break-word;margin:0;font-size:.75rem;line-height:1.6;overflow:auto}
+.quickforge-approval-impact-row+.quickforge-approval-code{margin-top:.375rem}
+.quickforge-approval-prompt{color:var(--muted-foreground);-webkit-user-select:none;user-select:none}
+.quickforge-approval-details{border-top:1px solid #0000;margin-top:.5625rem}
+.quickforge-approval-details--open{border-top-color:var(--border)}
+.quickforge-approval-details-toggle{width:100%;color:var(--muted-foreground);cursor:pointer;text-align:left;background:0 0;border:0;gap:.375rem;padding:.4375rem .0625rem 0;font-size:.75rem}
+.quickforge-approval-details-toggle:hover{color:var(--foreground)}
+.quickforge-approval-details-toggle svg{width:.875rem;height:.875rem;transition:transform .18s}
+.quickforge-approval-details--open .quickforge-approval-details-toggle svg{transform:rotate(90deg)}
+.quickforge-approval-details-content{padding-top:.5625rem;display:none}
+.quickforge-approval-details--open .quickforge-approval-details-content{display:block}
+.quickforge-approval-details-content .quickforge-approval-code{border:1px solid var(--border);border-radius:var(--radius);background:var(--muted);padding:.625rem}
+@supports (color:color-mix(in lab, red, red)){.quickforge-approval-details-content .quickforge-approval-code{background:color-mix(in oklab, var(--muted) 42%, var(--background))}}
+
+.quickforge-approval-message{border-radius:var(--radius);background:var(--destructive);margin-top:.625rem;padding:.5rem .5625rem}
+@supports (color:color-mix(in lab, red, red)){.quickforge-approval-message{background:color-mix(in oklab, var(--destructive) 10%, var(--background))}}
+
+.quickforge-approval-message{color:var(--destructive);font-size:.75rem;line-height:1.5}
+.quickforge-approval-message--disabled{background:var(--muted);color:var(--muted-foreground)}
+.quickforge-approval-actions{justify-content:flex-end;gap:.5rem;margin-top:.8125rem}
+.quickforge-approval-button{border:1px solid var(--border);border-radius:var(--radius);background:var(--background);min-height:2rem;color:var(--foreground);cursor:pointer;padding:.375rem .75rem;font-size:.75rem;font-weight:560;transition:background .15s,border-color .15s,color .15s,opacity .15s}
+.quickforge-approval-button--primary{border-color:var(--primary);background:var(--primary);color:var(--primary-foreground)}
+.quickforge-approval-button--primary:hover:not(:disabled){background:var(--primary)}
+@supports (color:color-mix(in lab, red, red)){.quickforge-approval-button--primary:hover:not(:disabled){background:color-mix(in oklab, var(--primary) 88%, black)}}
+
+.quickforge-approval-button--reject:hover:not(:disabled){border-color:var(--destructive)}
+@supports (color:color-mix(in lab, red, red)){.quickforge-approval-button--reject:hover:not(:disabled){border-color:color-mix(in oklab, var(--destructive) 50%, var(--border))}}
+
+.quickforge-approval-button--reject:hover:not(:disabled){background:var(--destructive)}
+@supports (color:color-mix(in lab, red, red)){.quickforge-approval-button--reject:hover:not(:disabled){background:color-mix(in oklab, var(--destructive) 10%, var(--background))}}
+
+.quickforge-approval-button--reject:hover:not(:disabled){color:var(--destructive)}
+.quickforge-approval-button:disabled{cursor:not-allowed;opacity:.58}
+.quickforge-approval-button--loading:before{content:"";vertical-align:-.125rem;border:1.5px solid;border-top-color:#0000;border-radius:50%;width:.75rem;height:.75rem;margin-right:.375rem;animation:.75s linear infinite quickforge-approval-spin;display:inline-block}
+@keyframes quickforge-approval-spin{to{transform:rotate(360deg)}}
+
+@media (width<=40rem){.quickforge-approval-card{margin-left:.75rem;margin-right:.75rem}
+.quickforge-approval-actions{align-items:stretch}
+.quickforge-approval-button{flex:1 1 0}}
+
+@media (width<=24rem){.quickforge-approval-actions{flex-direction:column}}
+

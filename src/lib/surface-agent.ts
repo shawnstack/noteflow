@@ -146,6 +146,28 @@ export class SurfaceAgentAdapter {
     this.state.model = model as unknown as Model<Api>
   }
 
+  /** 宿主（ChatSurface 思考选择器）变更思考等级：本地生效 + fire-and-forget 同步服务端 */
+  updateThinkingLevel(level: ThinkingLevel) {
+    this.state.thinkingLevel = level
+    this.emit('agent_state_changed')
+    if (!this.sessionId) return
+    void fetch(`/api/agents/${encodeURIComponent(this.sessionId)}/thinking-level`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ thinkingLevel: level }),
+    }).catch(() => {
+      /* 同步失败不打断输入，下次切换会重试 */
+    })
+  }
+
+  /** 恢复会话时只回填本地状态（服务端已是该值，无需回发） */
+  restoreThinkingLevel(level: unknown) {
+    if (typeof level === 'string' && level) {
+      this.state.thinkingLevel = level as ThinkingLevel
+      this.emit('agent_state_changed')
+    }
+  }
+
   resetState() {
     this.state.messages = []
     this.state.streamingMessage = undefined

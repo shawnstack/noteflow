@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, forwardRef } from 'react'
-import { ChevronDown, MessageSquarePlus, Paperclip, Shield, Trash2 } from 'lucide-react'
+import { ChevronDown, MessageSquarePlus, Paperclip, Trash2 } from 'lucide-react'
 import type { Agent } from '@earendil-works/pi-agent-core'
 import {
   approveToolCall,
@@ -20,6 +20,7 @@ import { assistantText } from '../lib/message-utils'
 import { ChatSurface } from './chat/surface'
 import type { SurfaceEditorBridgeElement } from './chat/surface/ChatTypes'
 import { setupAgentAccessMenu } from './chat/panel-decoration/agent-access-menu'
+import { clearToolApprovalCards, renderToolApprovalCard } from './chat/panel-decoration/approval-card'
 import { decorateModelButtonLabel } from './chat/panel-decoration/model-controls'
 import { closeComposerModelMenu, openCustomOnlyModelSelector } from '@/lib/custom-model-selector'
 import { ATTACH_NOTE_KEY, PROTECTED_KEY, SETTINGS_EVENT } from './SettingsDialog'
@@ -56,7 +57,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, Props>(function ChatPanel({
   const [booted, setBooted] = useState(false)
   const [catalog, setCatalog] = useState<ModelLike[]>([])
   const [protectedMode, setProtectedMode] = useState(() => localStorage.getItem(PROTECTED_KEY) === '1')
-  const [attachNote, setAttachNote] = useState(() => localStorage.getItem(ATTACH_NOTE_KEY) !== '0')
+  const [attachNote, setAttachNote] = useState(() => localStorage.getItem(ATTACH_NOTE_KEY) === '1')
   const [approval, setApproval] = useState<PendingApproval | null>(null)
   const [sessionsOpen, setSessionsOpen] = useState(false)
   const [sessions, setSessions] = useState<SessionSummary[]>([])
@@ -172,6 +173,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, Props>(function ChatPanel({
       adapter.bindSession(id)
       const messages = (state.messages ?? []).filter((m) => m.role === 'user' || m.role === 'assistant' || m.role === 'tool')
       adapter.restoreMessages(messages as AgentMessage[], Boolean(state.isStreaming))
+      adapter.restoreThinkingLevel(state.thinkingLevel)
       setSessionId(id)
       setApproval(state.pendingToolApproval ?? null)
       return true
@@ -240,7 +242,12 @@ export const ChatPanel = forwardRef<ChatPanelHandle, Props>(function ChatPanel({
       if (event.type === 'tool_approval_required') {
         const toolCallId = String(event.toolCallId || '')
         if (toolCallId) {
-          setApproval({ toolCallId, toolName: String(event.toolName || 'tool'), args: (event.args as Record<string, unknown>) ?? {} })
+          setApproval({
+            toolCallId,
+            toolName: String(event.toolName || 'tool'),
+            args: (event.args as Record<string, unknown>) ?? {},
+            source: (event.source as PendingApproval['source']) ?? undefined,
+          })
           return
         }
       }
@@ -254,28 +261,45 @@ export const ChatPanel = forwardRef<ChatPanelHandle, Props>(function ChatPanel({
   useEffect(() => {
     const onSettings = () => {
       setProtectedMode(localStorage.getItem(PROTECTED_KEY) === '1')
-      setAttachNote(localStorage.getItem(ATTACH_NOTE_KEY) !== '0')
+      setAttachNote(localStorage.getItem(ATTACH_NOTE_KEY) === '1')
     }
     window.addEventListener(SETTINGS_EVENT, onSettings)
     return () => window.removeEventListener(SETTINGS_EVENT, onSettings)
   }, [])
 
-  /* ---------- 审批 ---------- */
-  const resolveApproval = async (approved: boolean) => {
-    const current = sessionIdRef.current
-    if (!current || !approval) return
-    const { toolCallId, toolName } = approval
-    setApproval(null)
-    try {
-      if (approved) await approveToolCall(current, toolCallId)
-      else {
-        await rejectToolCall(current, toolCallId)
-        toast.info(`已拒绝 ${toolName}`)
-      }
-    } catch (err) {
-      toast.error(`审批操作失败：${err instanceof Error ? err.message : String(err)}`)
+  /* ---------- 审批（quickforge 原生审批卡，DOM 装饰渲染在消息流底部） ---------- */
+  useEffect(() => {
+    const panel = hostRef.current
+    if (!panel) return
+    if (!approval) {
+      clearToolApprovalCards(panel)
+      return
     }
-  }
+    const frame = requestAnimationFrame(() => {
+      const current = sessionIdRef.current
+      if (!current) return
+      const { toolCallId, toolName, args, source } = approval
+      renderToolApprovalCard(
+        {
+          panel,
+          onApprove: async () => {
+            await approveToolCall(current, toolCallId)
+            setApproval(null)
+          },
+          onReject: async () => {
+            await rejectToolCall(current, toolCallId)
+            toast.info(`已拒绝 ${toolName}`)
+            setApproval(null)
+          },
+        },
+        toolName,
+        toolCallId,
+        args,
+        source,
+      )
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [approval, toast])
 
   /* ---------- 模型切换（quickforge 原版模型菜单） ---------- */
   const switchModel = async (next: ModelLike) => {
@@ -381,7 +405,6 @@ export const ChatPanel = forwardRef<ChatPanelHandle, Props>(function ChatPanel({
             agent={surfaceAgent}
             enableAttachments
             enableModelSelector
-            enableThinkingSelector={false}
             chatPanelRevision={revision}
             onModelSelect={() => {
               // quickforge 原版模型菜单（DOM 版，含键盘导航/定位/外点关闭）
@@ -403,29 +426,6 @@ export const ChatPanel = forwardRef<ChatPanelHandle, Props>(function ChatPanel({
           />
         ) : (
           <p className="p-4 text-xs text-muted-foreground">连接服务中…</p>
-        )}
-
-        {/* 审批卡（浮层） */}
-        {approval && (
-          <div className="absolute bottom-4 left-1/2 z-20 w-[calc(100%-24px)] max-w-md -translate-x-1/2 rounded-xl border border-amber-600/70 bg-card/95 p-3 shadow-2xl backdrop-blur">
-            <p className="flex items-center gap-1.5 text-[12px] font-medium text-amber-500">
-              <Shield className="size-3.5" />
-              AI 请求使用工具：<span className="font-mono">{approval.toolName}</span>
-            </p>
-            {approval.args && Object.keys(approval.args).length > 0 && (
-              <pre className="mt-1.5 max-h-32 overflow-auto whitespace-pre-wrap break-all rounded bg-background/60 p-2 font-mono text-[11px] leading-5 text-muted-foreground">
-                {JSON.stringify(approval.args, null, 2).slice(0, 2000)}
-              </pre>
-            )}
-            <div className="mt-2 flex gap-2">
-              <button type="button" onClick={() => void resolveApproval(true)} className="rounded-md bg-primary px-3 py-1 text-xs text-primary-foreground hover:bg-primary/90">
-                批准
-              </button>
-              <button type="button" onClick={() => void resolveApproval(false)} className="rounded-md border border-border px-3 py-1 text-xs text-foreground hover:bg-muted">
-                拒绝
-              </button>
-            </div>
-          </div>
         )}
       </div>
     </div>

@@ -179,12 +179,12 @@ quickforge `showConfirm`/`showPrompt` 复用（命令式、Esc/Enter 语义、de
 
 | # | 缺失项 | 证据 | 级 |
 |---|---|---|---|
-| 1 | 预览分流修复：html 应走 iframe | artifact-preview-utils.ts:61-63 含 .html（会话复核）；NoteEditor.tsx:454-461 一律 `<img>`（会话复核）；现成 artifactPreviewMode() 三分流未用 | **P0** |
-| 2 | PDF/Word/Excel 预览接线 | 依赖已装（package.json:23-37）；document 预览管线在（artifact-preview-utils.ts:46-48、65-68）；README 已知限制 :130 承认 | **P0**（最高性价比） |
+| 1 | ~~预览分流修复：html 应走 iframe~~ **已修复（2026-09-29）**：NoteEditor 按 `lib/file-kind.ts` 分流，html→沙箱 iframe、二进制→信息卡 | docs/code-reader-design.md（方案）+ src/lib/file-kind.ts（实现） | ✅ |
+| 2 | ~~PDF/Word/Excel 预览接线~~ **已接线（2026-09-29）**：DocumentReader 经预览接口取二进制复用聊天管线 | src/components/workspace/DocumentReader.tsx；AttachmentPreview 增加 bytes 输入 | ✅ |
 | 3 | KaTeX 数学公式（阅读模式） | 聊天有（surface/Markdown.tsx:5-19 + chat-math.ts），MarkdownReader 无 | P1 |
-| 4 | TOC/大纲侧栏 + 标题锚点跳转 | MarkdownReader.tsx 无任何 heading id/TOC 逻辑 | P1 |
+| 4 | TOC/大纲侧栏 + 标题锚点跳转 | MarkdownReader.tsx 无任何 heading id/TOC 逻辑（H1–H3 大纲侧栏已在 NoteEditor；代码符号大纲已加） | P1 |
 | 5 | 内嵌 HTML 支持 | MarkdownReader.tsx:114 `skipHtml` | P2（安全默认关闭） |
-| 6 | 大图 lightbox | 中栏图片无点击放大；聊天侧 CodeBlock lightbox 已有可复用 | P2 |
+| 6 | 大图 lightbox | 中栏图片无点击放大（已有缩放工具条）；聊天侧 CodeBlock lightbox 已有可复用 | P2 |
 
 ### 4.4 搜索
 
@@ -243,12 +243,12 @@ quickforge `showConfirm`/`showPrompt` 复用（命令式、Esc/Enter 语义、de
 
 | 能力 | 位置 | 接线后点亮 |
 |---|---|---|
-| 文档预览三分流 artifactPreviewMode | artifact-preview-utils.ts:65-68 + pdfjs/docx/xlsx 依赖 | PDF/Word/Excel 预览（4.3#2） |
+| 文档预览三分流 artifactPreviewMode | artifact-preview-utils.ts + pdfjs/docx/xlsx 依赖 | ~~PDF/Word/Excel 预览~~ **已接线（2026-09-29，见 4.3#2）** |
 | git API 全家 | workspace-api.ts:218-323 | 版本历史（4.6#3） |
 | diff-view.ts | lib/diff-view.ts | 审批卡 diff（4.5#3）、版本对比 |
 | chat-math/KaTeX 管线 | lib/chat-math.ts + surface/Markdown.tsx | 阅读模式公式（4.3#3） |
 | onPreviewFile 眼睛按钮 + AttachmentOverlay 大图 | WorkspaceFileTree.tsx:87 / surface/index.ts:17 | 树上预览、中栏 lightbox |
-| code-highlight.ts（52 色） | lib/code-highlight.ts | 编辑模式高亮（若上 CodeMirror 则不需要） |
+| code-highlight.ts（52 色） | lib/code-highlight.ts | ~~编辑模式高亮~~ **阅读模式已用于 CodeReader（2026-09-29）**；编辑模式若上 CodeMirror 则不需要 |
 | i18n 双语词条 | lib/i18n.ts 全量 | 语言切换（4.7#2） |
 
 ### 4.10 半成品 / 死代码（清理项，均 P0/P1 级小活）

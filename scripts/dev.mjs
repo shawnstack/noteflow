@@ -9,6 +9,9 @@ import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)))
+// Node ≥18.20/20 在 Windows 上禁止无 shell 直接 spawn .cmd/.bat（EINVAL），
+// 因此 vite 不经 npm.cmd，直接用当前 node 启动 vite 的 bin 脚本。
+const VITE_BIN = resolve(ROOT, 'node_modules/vite/bin/vite.js')
 
 const children = []
 
@@ -42,7 +45,7 @@ function run(name, command, args, color) {
 }
 
 run('quickforge', 'node', ['server.mjs'], '\x1b[36m')
-run('vite', process.platform === 'win32' ? 'npm.cmd' : 'npm', ['run', 'dev:web'], '\x1b[35m')
+run('vite', process.execPath, [VITE_BIN], '\x1b[35m')
 
 function shutdown() {
   for (const child of children) {

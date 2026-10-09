@@ -35,11 +35,17 @@ export function base64ToBytes(base64: string): Uint8Array {
 /**
  * Decode attachment bytes outside of render so a malformed payload degrades
  * to an inline error message instead of crashing the React tree.
+ *
+ * Two input modes: the chat passes a base64 `content` payload, while the
+ * workspace document reader passes raw `bytes` fetched from the preview
+ * endpoint (no base64 round-trip). `content === undefined` selects the
+ * provided-bytes mode.
  */
-function useDecodedAttachmentBytes(content: string): { data?: Uint8Array; error: string } {
+function useDecodedAttachmentBytes(content: string | undefined, provided?: Uint8Array): { data?: Uint8Array; error: string } {
   const [data, setData] = useState<Uint8Array>()
   const [error, setError] = useState('')
   useEffect(() => {
+    if (content === undefined) return
     let cancelled = false
     void Promise.resolve().then(() => {
       if (cancelled) return
@@ -54,7 +60,7 @@ function useDecodedAttachmentBytes(content: string): { data?: Uint8Array; error:
       cancelled = true
     }
   }, [content])
-  return { data, error }
+  return content === undefined ? { data: provided, error: '' } : { data, error }
 }
 
 // ---------------------------------------------------------------------------
@@ -247,8 +253,14 @@ function PdfAttachmentPage({ pdf, pageNumber }: { pdf: Pick<PDFDocumentProxy, 'g
   )
 }
 
-export function PdfAttachmentPreview({ content }: { content: string }) {
-  const { data, error: decodeError } = useDecodedAttachmentBytes(content)
+/** 附件字节输入：聊天为 base64 `content`；中栏文档阅读器直接给 `bytes`。 */
+type AttachmentBytesProps = {
+  content?: string
+  bytes?: Uint8Array
+}
+
+export function PdfAttachmentPreview({ content, bytes }: AttachmentBytesProps) {
+  const { data, error: decodeError } = useDecodedAttachmentBytes(content, bytes)
   const [pdf, setPdf] = useState<PDFDocumentProxy>()
   const [error, setError] = useState('')
 
@@ -297,8 +309,8 @@ export function PdfAttachmentPreview({ content }: { content: string }) {
   )
 }
 
-export function DocxAttachmentPreview({ content }: { content: string }) {
-  const { data, error: decodeError } = useDecodedAttachmentBytes(content)
+export function DocxAttachmentPreview({ content, bytes }: AttachmentBytesProps) {
+  const { data, error: decodeError } = useDecodedAttachmentBytes(content, bytes)
   const bodyRef = useRef<HTMLDivElement | null>(null)
   const styleRef = useRef<HTMLDivElement | null>(null)
   const [error, setError] = useState('')
@@ -409,8 +421,8 @@ export function buildExcelSheetPreviews(xlsx: XlsxModule, workbook: WorkBook): E
   })
 }
 
-export function ExcelAttachmentPreview({ content }: { content: string }) {
-  const { data, error: decodeError } = useDecodedAttachmentBytes(content)
+export function ExcelAttachmentPreview({ content, bytes }: AttachmentBytesProps) {
+  const { data, error: decodeError } = useDecodedAttachmentBytes(content, bytes)
   const [sheets, setSheets] = useState<ExcelSheetPreview[]>([])
   const [activeSheet, setActiveSheet] = useState(0)
   const [error, setError] = useState('')

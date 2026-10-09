@@ -11,11 +11,28 @@ export type DesktopBridge = {
   selectDirectory?: () => Promise<string | null>
   /** 在新窗口打开指定项目（同项目已有窗口时主进程聚焦该窗口） */
   openProjectWindow?: (projectId: string) => void
+  /** 主进程推送右键“打开方式”传入的文件相对路径（同项目窗口已开时定位到该文件）；返回解绑函数 */
+  onOpenFile?: (cb: (relPath: string) => void) => () => void
 }
 
 export function getDesktopBridge(): DesktopBridge | null {
   const bridge = (window as Window & { noteflow?: DesktopBridge }).noteflow
   return bridge ?? null
+}
+
+export type AppPlatform = 'win32' | 'darwin' | 'linux'
+
+/**
+ * 当前运行平台（文案 / 行为差异用）：
+ * Electron 用 preload 注入的 process.platform；Web 退化为 UA 推断（服务通常同机）。
+ */
+export function getPlatform(): AppPlatform {
+  const injected = getDesktopBridge()?.platform || ''
+  const ua = navigator.userAgent
+  const raw = injected || (/mac|iphone|ipad/i.test(ua) ? 'darwin' : /win/i.test(ua) ? 'win32' : 'linux')
+  if (raw.startsWith('win')) return 'win32'
+  if (raw === 'darwin') return 'darwin'
+  return 'linux'
 }
 
 /** 是否运行在 Electron 桌面环境 */

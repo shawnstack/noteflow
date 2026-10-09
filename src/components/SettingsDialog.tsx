@@ -31,7 +31,7 @@ export function SettingsDialog({ open, onClose, onOpenSetup, notesDir }: Props) 
   const [catalog, setCatalog] = useState<ModelLike[]>([])
   const [activeModel, setActiveModelState] = useState<ModelLike | null>(null)
   const [protectedDefault, setProtectedDefault] = useState(false)
-  const [attachNoteDefault, setAttachNoteDefault] = useState(true)
+  const [attachNoteDefault, setAttachNoteDefault] = useState(false)
   const [fontSize, setFontSize] = useState(15)
   const [theme, setTheme] = useState<ThemePreference>('dark')
   const [shortcuts, setShortcutsState] = useState<Shortcuts>(() => getShortcuts())
@@ -46,7 +46,7 @@ export function SettingsDialog({ open, onClose, onOpenSetup, notesDir }: Props) 
       setActiveModelState(active)
     })()
     setProtectedDefault(localStorage.getItem(PROTECTED_KEY) === '1')
-    setAttachNoteDefault(localStorage.getItem(ATTACH_NOTE_KEY) !== '0')
+    setAttachNoteDefault(localStorage.getItem(ATTACH_NOTE_KEY) === '1')
     setFontSize(Number(localStorage.getItem(FONT_SIZE_KEY)) || 15)
     setTheme(getThemePreference())
     setShortcutsState(getShortcuts())
@@ -165,7 +165,7 @@ export function SettingsDialog({ open, onClose, onOpenSetup, notesDir }: Props) 
               />
               <span>
                 <span className="block text-[13px] text-foreground">默认附带当前笔记</span>
-                <span className="block text-[11px] text-muted-foreground/70">发送消息时把正在查看的笔记内容注入上下文</span>
+                <span className="block text-[11px] text-muted-foreground/70">发送消息时把正在查看的笔记内容注入上下文（默认关闭，需要时在对话栏点亮回形针）</span>
               </span>
             </label>
           </section>

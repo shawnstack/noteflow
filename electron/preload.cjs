@@ -18,6 +18,12 @@ contextBridge.exposeInMainWorld('noteflow', {
   openProjectWindow(projectId) {
     ipcRenderer.send('noteflow:open-project-window', String(projectId))
   },
+  /** 主进程推送“打开方式”传来的文件（同项目窗口已开时，无需重载直接定位）；返回解绑函数 */
+  onOpenFile(cb) {
+    const listener = (_event, relPath) => cb(relPath)
+    ipcRenderer.on('noteflow:open-file', listener)
+    return () => ipcRenderer.removeListener('noteflow:open-file', listener)
+  },
   window: {
     minimize: () => ipcRenderer.send('noteflow:window', 'minimize'),
     toggleMaximize: () => ipcRenderer.send('noteflow:window', 'toggle-maximize'),

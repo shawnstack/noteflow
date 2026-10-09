@@ -10,6 +10,7 @@
  */
 import { mkdir, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
+import { isPathWithin } from './fs-endpoint.mjs'
 
 const ALLOWED_EXT = new Set(['png', 'jpg', 'jpeg', 'webp', 'gif', 'svg', 'bmp'])
 const MAX_BYTES = 15 * 1024 * 1024
@@ -63,7 +64,8 @@ export function createAssetEndpoint({ notesDir }) {
       const stamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`
       const relPath = `assets/${month}/paste-${stamp}-${randomTag()}.${ext === 'jpeg' ? 'jpg' : ext}`
       const absPath = resolve(join(root, relPath))
-      if (!absPath.startsWith(root + '/')) {
+      // isPathWithin 用 path.relative 判断（旧 startsWith(root + '/') 在 Windows 恒 false → 上传必 403）
+      if (!isPathWithin(root, absPath)) {
         sendJson(res, 403, { error: 'invalid_path' })
         return
       }

@@ -2,7 +2,7 @@
  * QuickForge HTTP API 客户端。
  * 全部走相对路径 /api（dev: vite 代理；生产: server.mjs 反向代理）。
  */
-import type { AgentMessage, ChildrenResponse, FileContentResponse, ModelLike, ProjectInfo, SessionSummary, WorkspaceEntry } from './types'
+import type { AgentMessage, ChildrenResponse, FileContentResponse, ModelLike, PendingApproval, ProjectInfo, SessionSummary, WorkspaceEntry } from './types'
 
 async function jsonFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, { cache: 'no-store', ...init })
@@ -13,7 +13,8 @@ async function jsonFetch<T>(path: string, init?: RequestInit): Promise<T> {
   return payload as T
 }
 
-function post(path: string, body: unknown): Promise<unknown> {
+/** 供 file-ops / git-history 等模块调用 NoteFlow 自有端点（/api/noteflow/*） */
+export async function post(path: string, body: unknown): Promise<unknown> {
   return jsonFetch(path, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -77,14 +78,9 @@ export async function writeFileContent(projectId: string, path: string, content:
   await post(`/api/projects/${encodeURIComponent(projectId)}/tools/write_file`, { path, content })
 }
 
-/** 执行 shell 命令（文件移动/删除/建目录等；工作区根内执行） */
+/** 执行 shell 命令（用户自输入命令面板用；工作区根内执行） */
 export async function runCommand(projectId: string, command: string): Promise<unknown> {
   return post(`/api/projects/${encodeURIComponent(projectId)}/tools/run_command`, { command })
-}
-
-/** shell 单参数安全引用 */
-export function shQuote(value: string): string {
-  return `'${value.replace(/'/g, `'\\''`)}'`
 }
 
 /* ---------- 图片素材（编辑器粘贴/拖入） ---------- */
@@ -128,18 +124,10 @@ export async function searchFileNames(projectId: string, query: string): Promise
   return payload.entries ?? []
 }
 
-/** 列出全部 markdown 笔记路径（双链解析/补全/反向链接用；排除回收站，cwd=notes/） */
+/** 列出全部 markdown 笔记路径（双链解析/补全/反向链接用；排除回收站；Node fs 实现，双平台通用） */
 export async function listNotePaths(projectId: string): Promise<string[]> {
-  const payload = (await post(`/api/projects/${encodeURIComponent(projectId)}/tools/run_command`, {
-    command: `find . -type f \\( -name '*.md' -o -name '*.markdown' \\) -not -path './.trash/*' | sed 's|^\\./||' | sort`,
-  })) as { content?: string; error?: string; isError?: boolean }
-  if (payload && (payload.isError || payload.error)) throw new Error(String(payload.error || '列出笔记失败'))
-  const match = /\nSTDOUT[^\n]*:\n([\s\S]*?)\n\nSTDERR/.exec(String(payload?.content ?? ''))
-  const stdout = match ? match[1] : ''
-  return stdout
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean)
+  const payload = (await post('/api/noteflow/fs', { projectId, op: 'listNotes' })) as { paths?: string[] }
+  return payload.paths ?? []
 }
 
 export type GrepMatch = { path: string; line: number | null; text: string }
@@ -294,7 +282,8 @@ export type AgentStateSnapshot = {
   status?: string
   title?: string
   accessMode?: string
-  pendingToolApproval?: { toolCallId: string; toolName: string; args: Record<string, unknown> } | null
+  thinkingLevel?: string
+  pendingToolApproval?: PendingApproval | null
 }
 
 export async function getAgentState(sessionId: string): Promise<AgentStateSnapshot | null> {

@@ -71,6 +71,8 @@ export type PendingApproval = {
   toolCallId: string
   toolName: string
   args: Record<string, unknown>
+  /** 审批来源（subagent / MCP / Plugin 等），quickforge 原生审批卡用于来源徽章 */
+  source?: { type?: string; label?: string; subagent?: string } | null
 }
 
 export type SessionSummary = {

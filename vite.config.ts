@@ -5,12 +5,15 @@ import { fileURLToPath } from 'node:url'
 import { resolve } from 'node:path'
 // @ts-expect-error node 端共用模块（无类型声明）
 import { createAssetEndpoint, defaultNotesDir } from './asset-endpoint.mjs'
+// @ts-expect-error node 端共用模块（无类型声明）
+import { createFsEndpoint } from './fs-endpoint.mjs'
 
 // 前端所有 API 请求走相对路径 /api：
 // - dev 模式由 vite 代理转发到 zhibi 专属的 QuickForge 服务（127.0.0.1:5178）
 // - 生产模式由 server.mjs 的静态服务反向代理
-// - /api/noteflow/asset 为 NoteFlow 自有端点（图片上传），dev 下由本 middleware 处理
+// - /api/noteflow/* 为 NoteFlow 自有端点（图片上传 / 跨平台文件操作），dev 下由本 middleware 处理
 const assetUpload = createAssetEndpoint({ notesDir: defaultNotesDir(fileURLToPath(new URL('.', import.meta.url))) })
+const fsApi = createFsEndpoint({ qfBase: `http://127.0.0.1:${process.env.NOTEFLOW_QF_PORT || 5178}` })
 
 export default defineConfig({
   plugins: [
@@ -22,6 +25,9 @@ export default defineConfig({
         server.middlewares.use('/api/noteflow/asset', (req, res) => {
           console.log('[noteflow-dev] asset endpoint hit:', req.method, req.url)
           void assetUpload(req, res)
+        })
+        server.middlewares.use('/api/noteflow/fs', (req, res) => {
+          void fsApi(req, res)
         })
       },
     },
