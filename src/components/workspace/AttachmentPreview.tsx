@@ -1,4 +1,3 @@
-/* eslint-disable react-refresh/only-export-components -- exports the attachment preview components plus the base64/sanitization helpers covered by the loader tests. */
 import { useEffect, useRef, useState } from 'react'
 import type { PDFDocumentProxy } from 'pdfjs-dist'
 import type { WorkBook, WorkSheet } from 'xlsx'
@@ -7,16 +6,13 @@ import { t } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
 
 /**
- * Inline previews for chat attachments, mirroring the document renderers of
- * `src/components/workspace/WorkspaceDocumentContent.tsx` but decoupled from
- * `projectId` / `path`: the bytes come from the `Attachment.content` base64
- * payload instead of a workspace fetch. PDF pages, DOCX layout and Excel
- * sheets are rendered; PPTX stays text-only (extracted in the loader) and is
- * handled by the overlay.
+ * PDF / DOCX / Excel 内联预览（中栏 DocumentReader 使用）。
+ * 由原聊天附件预览精简而来：输入固定为 workspace 预览接口取回的字节，
+ * 不再处理聊天附件的 base64 payload。
  *
- * Rendered attachment markup is untrusted: docx output is sanitized after
- * every render (hyperlink and image scheme allowlists plus style scanning)
- * and base64 decoding happens in effects, never during render.
+ * 渲染内容不可信：docx-preview 输出在每次渲染后做净化（超链接与图片
+ * scheme 白名单 + style 扫描），所有解码/解析都在 effect 中进行，
+ * 永不在渲染期间抛错炸掉组件树。
  */
 
 const PDF_PREVIEW_SCALE = 1.5
@@ -24,53 +20,14 @@ const PDF_RENDER_MARGIN = '900px 0px'
 const EXCEL_MAX_ROWS = 5000
 const EXCEL_MAX_COLUMNS = 50
 
-/** Decode raw base64 (no data-URL prefix) into bytes. */
-export function base64ToBytes(base64: string): Uint8Array {
-  const binary = atob(base64)
-  const bytes = new Uint8Array(binary.length)
-  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index)
-  return bytes
-}
-
-/**
- * Decode attachment bytes outside of render so a malformed payload degrades
- * to an inline error message instead of crashing the React tree.
- *
- * Two input modes: the chat passes a base64 `content` payload, while the
- * workspace document reader passes raw `bytes` fetched from the preview
- * endpoint (no base64 round-trip). `content === undefined` selects the
- * provided-bytes mode.
- */
-function useDecodedAttachmentBytes(content: string | undefined, provided?: Uint8Array): { data?: Uint8Array; error: string } {
-  const [data, setData] = useState<Uint8Array>()
-  const [error, setError] = useState('')
-  useEffect(() => {
-    if (content === undefined) return
-    let cancelled = false
-    void Promise.resolve().then(() => {
-      if (cancelled) return
-      try {
-        setData(base64ToBytes(content))
-        setError('')
-      } catch (decodeError) {
-        setError(errorText(decodeError))
-      }
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [content])
-  return content === undefined ? { data: provided, error: '' } : { data, error }
-}
-
 // ---------------------------------------------------------------------------
-// Post-render sanitization of docx-preview output (XSS hardening)
+// docx-preview 输出的渲染后净化（XSS 加固）
 // ---------------------------------------------------------------------------
 
-/** Hyperlink schemes allowed to survive an attachment render. */
+/** 允许在附件渲染结果中存活的超链接 scheme。 */
 const ATTACHMENT_ALLOWED_LINK_SCHEMES = new Set(['http:', 'https:', 'mailto:'])
 
-/** Strip the ASCII control/space characters browsers ignore when parsing URLs. */
+/** 剥离浏览器解析 URL 时忽略的 ASCII 控制符/空白，防 `jav\tascript:` 逃逸。 */
 function normalizeHrefForSchemeCheck(href: string): string {
   let normalized = ''
   for (let index = 0; index < href.length; index += 1) {
@@ -81,32 +38,27 @@ function normalizeHrefForSchemeCheck(href: string): string {
   return normalized
 }
 
-/**
- * URL schemes are matched after stripping control characters (browsers ignore
- * tabs/newlines inside `href`, so `jav\tascript:` must not slip through).
- */
 export function isAllowedAttachmentHref(href: string): boolean {
   const normalized = normalizeHrefForSchemeCheck(href)
   const schemeMatch = /^([a-zA-Z][a-zA-Z0-9+.-]*):/.exec(normalized)
-  if (!schemeMatch) return true // relative path, query or `#anchor`
+  if (!schemeMatch) return true // 相对路径、查询串或 `#锚点`
   return ATTACHMENT_ALLOWED_LINK_SCHEMES.has(`${schemeMatch[1].toLowerCase()}:`)
 }
 
-/** Minimal structural surface of an anchor element (satisfied by the DOM and test fakes). */
+/** 锚点元素的最小结构面（DOM 与测试替身均满足）。 */
 export type SanitizableAnchor = {
   getAttribute(name: string): string | null
   setAttribute(name: string, value: string): void
 }
 
-/** Minimal structural surface of a query root such as an element. */
+/** 查询根（如元素）的最小结构面。 */
 export type AttachmentSanitizeRoot<T> = {
   querySelectorAll(selector: string): Iterable<T>
 }
 
 /**
- * Neutralize unsafe hyperlinks after a docx render: anything that is not
- * http(s)/mailto/relative/anchor is pointed at `#`, and every link gets
- * `rel="noopener noreferrer"` + `target="_blank"`.
+ * 中和 docx 渲染结果中的不安全超链接：非 http(s)/mailto/相对/锚点一律
+ * 指向 `#`，并统一补 `rel="noopener noreferrer"` + `target="_blank"`。
  */
 export function sanitizeAttachmentLinks(root: AttachmentSanitizeRoot<SanitizableAnchor>): number {
   let sanitized = 0
@@ -120,37 +72,26 @@ export function sanitizeAttachmentLinks(root: AttachmentSanitizeRoot<Sanitizable
   return sanitized
 }
 
-/** Image source schemes allowed to survive an attachment render. */
+/** 允许存活的图片来源 scheme。 */
 const ATTACHMENT_ALLOWED_IMAGE_SCHEMES = new Set(['http:', 'https:', 'blob:'])
 
-/**
- * Image sources follow the same scheme checks as hyperlinks: docx-preview
- * emits `data:`/`blob:` URLs for embedded media, http(s) covers linked
- * images, and anything else (`javascript:`, `vbscript:`, `file:`, …) is
- * rejected.
- */
 export function isAllowedAttachmentImageSrc(src: string): boolean {
   const normalized = normalizeHrefForSchemeCheck(src)
   const schemeMatch = /^([a-zA-Z][a-zA-Z0-9+.-]*):/.exec(normalized)
-  if (!schemeMatch) return true // relative path
+  if (!schemeMatch) return true // 相对路径
   const scheme = `${schemeMatch[1].toLowerCase()}:`
-  // `data:` is narrowed to images: an <img> only renders image payloads, so
-  // `data:text/html` and friends are conservatively dropped.
+  // `data:` 收窄为图片：`data:text/html` 之类一律丢弃。
   if (scheme === 'data:') return /^data:image\//i.test(normalized)
   return ATTACHMENT_ALLOWED_IMAGE_SCHEMES.has(scheme)
 }
 
-/** Minimal structural surface of an image element (satisfied by the DOM and test fakes). */
+/** 图片元素的最小结构面。 */
 export type SanitizableImage = {
   getAttribute(name: string): string | null
   removeAttribute(name: string): void
 }
 
-/**
- * Neutralize unsafe image sources after a docx render by dropping the `src`
- * attribute outright (a placeholder like `#` would re-request the current
- * document as an image).
- */
+/** 不安全图片源直接摘除 `src`（占位 `#` 会把当前文档当图片再请求一次）。 */
 export function sanitizeAttachmentImages(root: AttachmentSanitizeRoot<SanitizableImage>): number {
   let sanitized = 0
   for (const image of root.querySelectorAll('img[src]')) {
@@ -161,16 +102,15 @@ export function sanitizeAttachmentImages(root: AttachmentSanitizeRoot<Sanitizabl
   return sanitized
 }
 
-/** Minimal structural surface of an injected `<style>` element. */
+/** 注入的 `<style>` 元素的最小结构面。 */
 export type SanitizableStyle = {
   textContent: string | null
   remove(): void
 }
 
 /**
- * docx-preview injects `<style>` elements built from document part text; a
- * crafted document could smuggle markup through them. Valid CSS essentially
- * never contains `<`, so drop any style block that does (cosmetic loss only).
+ * docx-preview 会用文档部件文本拼 `<style>` 注入；构造文档可借它夹带
+ * 标记。合法 CSS 几乎不含 `<`，含则整块移除（仅损失外观）。
  */
 export function sanitizeAttachmentStyles(root: AttachmentSanitizeRoot<SanitizableStyle>): number {
   let removed = 0
@@ -199,7 +139,7 @@ function PreviewLoading() {
 function PdfAttachmentPage({ pdf, pageNumber }: { pdf: Pick<PDFDocumentProxy, 'getPage'>; pageNumber: number }) {
   const hostRef = useRef<HTMLDivElement | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
-  // Only render pages near the viewport (same heuristic as WorkspaceDocumentContent).
+  // 仅渲染接近视口的页面（懒渲染，避免多页 PDF 一次性卡死）。
   const [visible, setVisible] = useState(() => typeof IntersectionObserver === 'undefined')
   const [rendered, setRendered] = useState(false)
   const [error, setError] = useState('')
@@ -253,26 +193,24 @@ function PdfAttachmentPage({ pdf, pageNumber }: { pdf: Pick<PDFDocumentProxy, 'g
   )
 }
 
-/** 附件字节输入：聊天为 base64 `content`；中栏文档阅读器直接给 `bytes`。 */
+/** 附件字节输入：DocumentReader 从预览接口取回后直接传入。 */
 type AttachmentBytesProps = {
-  content?: string
   bytes?: Uint8Array
 }
 
-export function PdfAttachmentPreview({ content, bytes }: AttachmentBytesProps) {
-  const { data, error: decodeError } = useDecodedAttachmentBytes(content, bytes)
+export function PdfAttachmentPreview({ bytes }: AttachmentBytesProps) {
   const [pdf, setPdf] = useState<PDFDocumentProxy>()
   const [error, setError] = useState('')
 
   useEffect(() => {
-    if (!data) return undefined
+    if (!bytes) return undefined
     let disposed = false
     let loadingTask: ReturnType<typeof import('pdfjs-dist')['getDocument']> | undefined
     void import('pdfjs-dist').then((pdfjs) => {
       if (disposed) return undefined
       pdfjs.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).toString()
       loadingTask = pdfjs.getDocument({
-        data: data.slice(0),
+        data: bytes.slice(0),
         disableRange: true,
         disableStream: true,
         isEvalSupported: false,
@@ -293,9 +231,8 @@ export function PdfAttachmentPreview({ content, bytes }: AttachmentBytesProps) {
       disposed = true
       void loadingTask?.destroy?.()
     }
-  }, [data])
+  }, [bytes])
 
-  if (decodeError) return <div className="p-4 text-sm text-destructive">{decodeError}</div>
   if (error) return <div className="p-4 text-sm text-destructive">{error}</div>
   if (!pdf) return <PreviewLoading />
   return (
@@ -309,8 +246,7 @@ export function PdfAttachmentPreview({ content, bytes }: AttachmentBytesProps) {
   )
 }
 
-export function DocxAttachmentPreview({ content, bytes }: AttachmentBytesProps) {
-  const { data, error: decodeError } = useDecodedAttachmentBytes(content, bytes)
+export function DocxAttachmentPreview({ bytes }: AttachmentBytesProps) {
   const bodyRef = useRef<HTMLDivElement | null>(null)
   const styleRef = useRef<HTMLDivElement | null>(null)
   const [error, setError] = useState('')
@@ -318,11 +254,11 @@ export function DocxAttachmentPreview({ content, bytes }: AttachmentBytesProps) 
   useEffect(() => {
     const body = bodyRef.current
     const styles = styleRef.current
-    if (!body || !styles || !data) return undefined
+    if (!body || !styles || !bytes) return undefined
     let disposed = false
     body.replaceChildren()
     styles.replaceChildren()
-    void import('docx-preview').then(({ renderAsync }) => renderAsync(data.slice(0), body, styles, {
+    void import('docx-preview').then(({ renderAsync }) => renderAsync(bytes.slice(0), body, styles, {
       className: 'quickforge-docx-preview',
       inWrapper: true,
       breakPages: true,
@@ -332,8 +268,7 @@ export function DocxAttachmentPreview({ content, bytes }: AttachmentBytesProps) 
       ignoreHeight: false,
       useBase64URL: false,
     })).then(() => {
-      // docx-preview renders untrusted document markup; sanitize the result
-      // (hyperlink + image schemes, injected styles) before it becomes interactive.
+      // docx-preview 渲染的是不可信文档标记；成为可交互 DOM 前先净化。
       if (disposed) return
       sanitizeAttachmentLinks(body)
       sanitizeAttachmentImages(body)
@@ -346,9 +281,8 @@ export function DocxAttachmentPreview({ content, bytes }: AttachmentBytesProps) 
       body.replaceChildren()
       styles.replaceChildren()
     }
-  }, [data])
+  }, [bytes])
 
-  if (decodeError) return <div className="p-4 text-sm text-destructive">{decodeError}</div>
   if (error) return <div className="p-4 text-sm text-destructive">{error}</div>
   return (
     <div className="h-full w-full overflow-auto">
@@ -369,7 +303,7 @@ type ExcelSheetPreview = {
 
 type XlsxModule = typeof import('xlsx')
 
-/** Estimated sheet dimensions from the `!ref` range, before any row is materialized. */
+/** 用 `!ref` 范围估算 sheet 尺寸（尚未物化任何行）。 */
 export function estimateExcelSheetDimensions(
   xlsx: XlsxModule,
   worksheet: WorkSheet,
@@ -384,7 +318,7 @@ export function estimateExcelSheetDimensions(
   }
 }
 
-/** Narrow a sheet's `!ref` to the preview window so conversion only materializes the sampled cells. */
+/** 把 sheet 的 `!ref` 收窄到预览窗口，避免全量物化被采样之外的单元格。 */
 function narrowExcelSheetForPreview(xlsx: XlsxModule, worksheet: WorkSheet): WorkSheet {
   const ref = worksheet['!ref']
   if (!ref) return worksheet
@@ -399,11 +333,7 @@ function narrowExcelSheetForPreview(xlsx: XlsxModule, worksheet: WorkSheet): Wor
   return { ...worksheet, '!ref': xlsx.utils.encode_range(range) }
 }
 
-/**
- * Build preview rows for every sheet, sampling at most
- * {@link EXCEL_MAX_ROWS} rows × {@link EXCEL_MAX_COLUMNS} columns and
- * reporting which caps actually truncated the sheet.
- */
+/** 每个 sheet 生成预览行：最多 EXCEL_MAX_ROWS 行 × EXCEL_MAX_COLUMNS 列，并标记截断。 */
 export function buildExcelSheetPreviews(xlsx: XlsxModule, workbook: WorkBook): ExcelSheetPreview[] {
   return workbook.SheetNames.map((name) => {
     const worksheet = workbook.Sheets[name]
@@ -421,17 +351,16 @@ export function buildExcelSheetPreviews(xlsx: XlsxModule, workbook: WorkBook): E
   })
 }
 
-export function ExcelAttachmentPreview({ content, bytes }: AttachmentBytesProps) {
-  const { data, error: decodeError } = useDecodedAttachmentBytes(content, bytes)
+export function ExcelAttachmentPreview({ bytes }: AttachmentBytesProps) {
   const [sheets, setSheets] = useState<ExcelSheetPreview[]>([])
   const [activeSheet, setActiveSheet] = useState(0)
   const [error, setError] = useState('')
 
   useEffect(() => {
-    if (!data) return undefined
+    if (!bytes) return undefined
     let disposed = false
     void import('xlsx').then((xlsx) => {
-      const workbook = xlsx.read(data.slice(0), { type: 'array', cellDates: true })
+      const workbook = xlsx.read(bytes.slice(0), { type: 'array', cellDates: true })
       return buildExcelSheetPreviews(xlsx, workbook)
     }).then((nextSheets) => {
       if (!disposed) setSheets(nextSheets)
@@ -439,12 +368,11 @@ export function ExcelAttachmentPreview({ content, bytes }: AttachmentBytesProps)
       if (!disposed) setError(errorText(parseError))
     })
     return () => { disposed = true }
-  }, [data])
+  }, [bytes])
 
   const sheet = sheets[activeSheet]
   const columnCount = sheet ? sheet.rows.reduce((max, row) => Math.max(max, row.length), 0) : 0
 
-  if (decodeError) return <div className="p-4 text-sm text-destructive">{decodeError}</div>
   if (error) return <div className="p-4 text-sm text-destructive">{error}</div>
   if (!sheet) return <PreviewLoading />
   return (
@@ -486,7 +414,7 @@ export function ExcelAttachmentPreview({ content, bytes }: AttachmentBytesProps)
   )
 }
 
-/** Row/column sampling notices for the Excel preview (i18n-aware). */
+/** Excel 预览的行/列采样提示。 */
 export function ExcelTruncationNotices({ truncatedRows, truncatedColumns }: { truncatedRows: boolean; truncatedColumns: boolean }) {
   if (!truncatedRows && !truncatedColumns) return null
   return (

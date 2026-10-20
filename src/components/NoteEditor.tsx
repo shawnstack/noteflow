@@ -12,22 +12,18 @@ import {
   Heading3,
   History,
   Italic,
-  Languages,
   Link2,
   List,
   ListOrdered,
   ListTree,
-  MessageSquareText,
   Pencil,
   Quote,
   RotateCcw,
   Save,
-  Sparkles,
   Table,
   Trash2,
   TriangleAlert,
   Type as TypeIcon,
-  WandSparkles,
 } from 'lucide-react'
 import {
   readFileContent,
@@ -57,13 +53,10 @@ type Props = {
   projectId: string
   path: string | null
   onSaved: (path: string) => void
-  onContentChange: (path: string, content: string) => void
   /** 文件被重命名/移入回收站/恢复后通知宿主刷新树与选中态 */
   onFileMoved: (nextSelectedPath: string | null) => void
   /** 未保存状态变化（标签栏圆点） */
   onDirtyChange?: (path: string, dirty: boolean) => void
-  /** 选中文字 AI 操作：把构造好的 prompt 发到右侧对话 */
-  onAskAi?: (prompt: string) => void
   /** 打开版本历史面板 */
   onOpenHistory?: (path: string) => void
   /** 编辑器写入了新素材文件（粘贴图片落盘）后通知宿主（刷新树 + git commit） */
@@ -74,12 +67,7 @@ type Props = {
   onOpenWiki?: (target: string) => void
   /** 直接打开一篇已有笔记（反向链接跳转） */
   onOpenPath?: (path: string) => void
-  /** 最近一次 AI 回复全文（选中文字 AI → 替换回选区） */
-  aiResult?: { text: string; at: number } | null
 }
-
-/** 选中文字 AI 操作类型 */
-type AskAction = 'polish' | 'translate' | 'explain' | 'expand'
 
 const DRAFT_PREFIX = 'noteflow.draft:'
 
@@ -97,7 +85,7 @@ const clearDraft = (projectId: string, path: string) => {
   localStorage.removeItem(DRAFT_PREFIX + path)
 }
 
-export function NoteEditor({ projectId, path, onSaved, onContentChange, onFileMoved, onDirtyChange, onAskAi, onOpenHistory, onFileCreated, noteList, onOpenWiki, onOpenPath, aiResult }: Props) {
+export function NoteEditor({ projectId, path, onSaved, onFileMoved, onDirtyChange, onOpenHistory, onFileCreated, noteList, onOpenWiki, onOpenPath }: Props) {
   const [content, setContent] = useState('')
   const [draft, setDraft] = useState('')
   const [mode, setMode] = useState<Mode>('read')
@@ -110,12 +98,10 @@ export function NoteEditor({ projectId, path, onSaved, onContentChange, onFileMo
   const [externalChanged, setExternalChanged] = useState(false)
   const [draftRestored, setDraftRestored] = useState(false)
   const [language, setLanguage] = useState('markdown')
-  const [aiMenu, setAiMenu] = useState<{ x: number; y: number; text: string } | null>(null)
   const [wikiMenu, setWikiMenu] = useState<{ x: number; y: number; query: string; candidates: string[]; selected: number } | null>(null)
   const [backlinks, setBacklinks] = useState<{ path: string; line: number | null; text: string }[] | null>(null)
   const [backlinksOpen, setBacklinksOpen] = useState(true)
   const [outlineOpen, setOutlineOpen] = useState(false)
-  const [pendingAi, setPendingAi] = useState<{ start: number; end: number; text: string; action: AskAction; at: number } | null>(null)
   /** 智能识别的文件类型（路径 + 内容嗅探，见 lib/file-kind.ts） */
   const [kind, setKind] = useState<FileKind>('markdown')
   const [fileSize, setFileSize] = useState<number | null>(null)
@@ -126,8 +112,6 @@ export function NoteEditor({ projectId, path, onSaved, onContentChange, onFileMo
   const composingRef = useRef(false)
   /** 最新编辑状态快照（path 切换时同步 flush 草稿，防 800ms 防抖窗口丢字） */
   const editStateRef = useRef<{ path: string; draft: string; dirty: boolean }>({ path: '', draft: '', dirty: false })
-  /** 最近一次松开鼠标的位置（选中浮动菜单锚点） */
-  const lastPointerRef = useRef<{ x: number; y: number } | null>(null)
   const toast = useToast()
   const dialog = useDialog()
   const inTrash = path !== null && path.startsWith(`${TRASH_DIR}/`)
@@ -166,7 +150,6 @@ export function NoteEditor({ projectId, path, onSaved, onContentChange, onFileMo
     setSavedMtime(null)
     setExternalChanged(false)
     setDraftRestored(false)
-    setPendingAi(null)
     setWikiMenu(null)
     if (!path) {
       setContent('')
@@ -361,11 +344,6 @@ export function NoteEditor({ projectId, path, onSaved, onContentChange, onFileMo
     }
   }
 
-  // 上报当前内容（供对话面板引用）
-  useEffect(() => {
-    if (path && !isNew) onContentChange(path, draft)
-  }, [path, draft, isNew, onContentChange])
-
   /* ---------- 工具栏操作（基于 textarea 选区） ---------- */
   const withSelection = (next: string, selStart: number, selEnd: number) => {
     updateDraft(next)
@@ -470,60 +448,6 @@ export function NoteEditor({ projectId, path, onSaved, onContentChange, onFileMo
     if (!file) return
     event.preventDefault()
     void insertImageFile(file)
-  }
-
-  /* ---------- 选中文字 → AI 操作（浮动菜单，结果发右侧对话） ---------- */
-  const updateAiMenu = () => {
-    const ta = textareaRef.current
-    if (!ta || !onAskAi) {
-      setAiMenu(null)
-      return
-    }
-    const { selectionStart: s, selectionEnd: e, value } = ta
-    const text = s === e ? '' : value.slice(s, e)
-    if (text.trim().length < 2 || text.length > 20000) {
-      setAiMenu(null)
-      return
-    }
-    const pos = lastPointerRef.current
-    setAiMenu({ x: pos?.x ?? 320, y: pos?.y ?? 160, text })
-  }
-
-  const askAi = (action: AskAction) => {
-    if (!aiMenu) return
-    const ta = textareaRef.current
-    const text = aiMenu.text
-    const start = ta ? ta.selectionStart : 0
-    const end = ta ? ta.selectionEnd : 0
-    setAiMenu(null)
-    setPendingAi({ start, end, text, action, at: Date.now() })
-    const wrapped = `\`\`\`\n${text}\n\`\`\``
-    const prompts: Record<AskAction, string> = {
-      polish: `请润色下面选中的文字，保持原意与语言不变，直接输出润色后的正文，不要任何解释或前后缀：\n\n${wrapped}`,
-      translate: `请将下面选中的文字翻译成中文（若本来就是中文则翻译成英文），直接输出译文正文，不要任何解释：\n\n${wrapped}`,
-      explain: `请解释下面选中的文字的含义/背景/要点，简洁明了：\n\n${wrapped}`,
-      expand: `请扩写下面选中的文字，保持原有风格与语境，直接输出扩写后的正文，不要任何解释：\n\n${wrapped}`,
-    }
-    onAskAi?.(prompts[action])
-  }
-
-  /* ---------- AI 结果应用回选区（选中文字 AI 的闭环） ---------- */
-  const lastAi = aiResult ?? null
-  const aiApplyReady = lastAi !== null && lastAi.text.trim().length > 0 && pendingAi !== null && lastAi.at > pendingAi.at
-  const aiReplaceValid = aiApplyReady && pendingAi !== null && draft.slice(pendingAi.start, pendingAi.end) === pendingAi.text
-
-  const applyAiToSelection = (mode: 'replace' | 'insert') => {
-    if (!lastAi || lastAi.text.trim().length === 0) return
-    if (mode === 'replace' && pendingAi && aiReplaceValid) {
-      const next = draft.slice(0, pendingAi.start) + lastAi.text + draft.slice(pendingAi.end)
-      withSelection(next, pendingAi.start, pendingAi.start + lastAi.text.length)
-    } else {
-      const ta = textareaRef.current
-      const at = ta ? ta.selectionStart : draft.length
-      const next = `${draft.slice(0, at)}${lastAi.text}\n${draft.slice(at)}`
-      withSelection(next, at + lastAi.text.length, at + lastAi.text.length)
-    }
-    setPendingAi(null)
   }
 
   /* ---------- 双链：[[ 自动补全 ---------- */
@@ -836,37 +760,10 @@ export function NoteEditor({ projectId, path, onSaved, onContentChange, onFileMo
       )}
 
       {error && <p className="border-b border-destructive/40 bg-destructive/10 px-4 py-1.5 text-xs text-destructive">{error}</p>}
-      {aiApplyReady && (
-        <div className="flex items-center gap-2 border-b border-indigo-500/40 bg-indigo-500/10 px-4 py-1.5 text-xs text-indigo-600 dark:text-indigo-300">
-          <WandSparkles className="size-3.5 shrink-0" />
-          <span className="min-w-0 flex-1 truncate" title={lastAi?.text}>
-            AI 已回复「{lastAi?.text.replace(/\s+/g, ' ').slice(0, 48)}…」，要应用到选区吗？
-          </span>
-          <button
-            type="button"
-            disabled={!aiReplaceValid}
-            title={aiReplaceValid ? '用 AI 结果替换原选中文字' : '原文已改动，无法安全替换，可改用插入'}
-            onClick={() => applyAiToSelection('replace')}
-            className="shrink-0 rounded border border-indigo-500/50 px-2 py-0.5 hover:bg-indigo-500/15 disabled:cursor-not-allowed disabled:opacity-40 dark:border-indigo-400/50"
-          >
-            替换选区
-          </button>
-          <button
-            type="button"
-            onClick={() => applyAiToSelection('insert')}
-            className="shrink-0 rounded border border-border px-2 py-0.5 hover:bg-muted"
-          >
-            插入光标处
-          </button>
-          <button type="button" onClick={() => setPendingAi(null)} className="shrink-0 rounded border border-border px-2 py-0.5 text-muted-foreground hover:bg-muted">
-            忽略
-          </button>
-        </div>
-      )}
       {externalChanged && (
         <div className="flex items-center gap-2 border-b border-amber-500/40 bg-amber-500/10 px-4 py-1.5 text-xs text-amber-600 dark:text-amber-300">
           <TriangleAlert className="size-3.5 shrink-0" />
-          <span className="min-w-0 flex-1 truncate">文件已被 AI 或外部程序修改</span>
+          <span className="min-w-0 flex-1 truncate">文件已被外部程序修改</span>
           <button type="button" onClick={() => void reload(path).then(() => toast.info('已加载最新版本'))} className="shrink-0 rounded border border-amber-500/50 px-2 py-0.5 hover:bg-amber-500/15 dark:border-amber-700 dark:hover:bg-amber-900/40">
             加载最新
           </button>
@@ -935,21 +832,14 @@ export function NoteEditor({ projectId, path, onSaved, onContentChange, onFileMo
                   if (event.dataTransfer?.types.includes('Files')) event.preventDefault()
                 }}
                 onMouseDown={() => {
-                  setAiMenu(null)
                   setWikiMenu(null)
                 }}
-                onMouseUp={(event) => {
-                  lastPointerRef.current = { x: event.clientX, y: event.clientY }
-                  window.setTimeout(updateAiMenu, 0)
-                }}
                 onKeyUp={(event) => {
-                  if (event.shiftKey || event.key === 'Escape') updateAiMenu()
                   if (!composingRef.current && !['Shift', 'Meta', 'Alt', 'Control'].includes(event.key)) {
                     window.setTimeout(updateWikiMenu, 0)
                   }
                 }}
                 onScroll={() => {
-                  setAiMenu(null)
                   setWikiMenu(null)
                 }}
                 onBlur={() => window.setTimeout(() => setWikiMenu(null), 120)}
@@ -1074,28 +964,6 @@ export function NoteEditor({ projectId, path, onSaved, onContentChange, onFileMo
         )}
       </div>
 
-      {/* 选中文字 AI 浮动菜单（fixed 定位跟随选区松开位置） */}
-      {aiMenu && onAskAi && mode !== 'read' && (
-        <div
-          role="toolbar"
-          style={{
-            left: Math.max(8, Math.min(aiMenu.x - 160, window.innerWidth - 336)),
-            top: aiMenu.y > 96 ? aiMenu.y - 88 : aiMenu.y + 28,
-          }}
-          className="fixed z-[90] w-80 rounded-xl border border-border bg-popover p-1.5 text-popover-foreground shadow-lg"
-        >
-          <p className="truncate px-2 pb-1 pt-0.5 text-[11px] text-muted-foreground" title={aiMenu.text}>
-            已选中：{aiMenu.text.replace(/\s+/g, ' ').slice(0, 60)}
-            {aiMenu.text.length > 60 ? '…' : ''}
-          </p>
-          <div className="flex items-center gap-0.5">
-            <AiMenuButton title="润色选中文字，结果发到右侧对话" icon={<WandSparkles className="size-3.5" />} label="润色" onClick={() => askAi('polish')} />
-            <AiMenuButton title="翻译（中↔英自动判断）" icon={<Languages className="size-3.5" />} label="翻译" onClick={() => askAi('translate')} />
-            <AiMenuButton title="解释含义" icon={<MessageSquareText className="size-3.5" />} label="解释" onClick={() => askAi('explain')} />
-            <AiMenuButton title="扩写" icon={<Sparkles className="size-3.5" />} label="扩写" onClick={() => askAi('expand')} />
-          </div>
-        </div>
-      )}
       {/* 双链 [[ 自动补全（等宽字体估算光标位置） */}
       {wikiMenu && wikiMenu.candidates.length > 0 && (
         <div
@@ -1155,20 +1023,6 @@ function ToolButton({ title, onClick, children }: { title: string; onClick: () =
       className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
     >
       {children}
-    </button>
-  )
-}
-
-function AiMenuButton({ title, icon, label, onClick }: { title: string; icon: ReactNode; label: string; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      title={title}
-      onClick={onClick}
-      className="flex flex-1 items-center justify-center gap-1 rounded-lg px-2 py-1.5 text-[12px] text-foreground transition-colors hover:bg-accent"
-    >
-      {icon}
-      {label}
     </button>
   )
 }

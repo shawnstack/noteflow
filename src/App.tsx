@@ -1,17 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { CalendarCheck, Feather, PanelLeft, PanelLeftClose, PanelRight, PanelRightClose, Search, Settings2, Unplug } from 'lucide-react'
-import { activateProject, getActiveModel, getProjectBundle, listNotePaths, readFileMeta, registerProjectPath, removeProject as removeProjectApi, selectProjectDirectory, writeFileContent } from './lib/api'
+import { CalendarCheck, Feather, PanelLeft, PanelLeftClose, Search, Settings2, Unplug } from 'lucide-react'
+import { activateProject, getProjectBundle, listNotePaths, readFileMeta, registerProjectPath, removeProject as removeProjectApi, selectProjectDirectory, writeFileContent } from './lib/api'
 import { initTheme } from './lib/theme'
 import { getDesktopBridge, openProjectInNewWindow } from './lib/desktop'
-import type { ModelLike, ProjectInfo } from './lib/types'
+import type { ProjectInfo } from './lib/types'
 import { ensureGitRepo, gitAutoCommit } from './lib/git-history'
 import { resolveWikiTarget } from './lib/wikilinks'
 import { formatShortcut, matchesShortcut, useShortcuts } from './lib/shortcuts'
 import { FileTree } from './components/FileTree'
 import { NoteEditor } from './components/NoteEditor'
-import { ChatPanel, type ChatPanelHandle } from './components/ChatPanel'
-import { SetupDialog } from './components/SetupDialog'
-import { SettingsDialog, initPersistedSettings } from './components/SettingsDialog'
+import { SettingsDialog } from './components/SettingsDialog'
 import { CommandRunner } from './components/CommandRunner'
 import { SearchPalette } from './components/SearchPalette'
 import { TabBar } from './components/TabBar'
@@ -24,8 +22,6 @@ import { useToast } from './components/Toast'
 
 const LEFT_MIN = 180
 const LEFT_MAX = 440
-const RIGHT_MIN = 300
-const RIGHT_MAX = 620
 
 /** 多标签页持久化（重启后恢复打开的笔记）。key 按项目隔离：多窗口/多项目互不串台 */
 const TABS_KEY_PREFIX = 'noteflow.openTabs'
@@ -44,21 +40,14 @@ export default function App() {
   const [dirtyTabs, setDirtyTabs] = useState<Record<string, boolean>>({})
   const [historyPath, setHistoryPath] = useState<string | null>(null)
   const [treeVersion, setTreeVersion] = useState(0)
-  const [model, setModel] = useState<ModelLike | null>(null)
-  const [setupOpen, setSetupOpen] = useState(false)
-  const [noteContext, setNoteContext] = useState<{ path: string; content: string } | null>(null)
   const [searchOpen, setSearchOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [noteList, setNoteList] = useState<string[]>([])
-  const [aiResult, setAiResult] = useState<{ text: string; at: number } | null>(null)
   const [leftWidth, setLeftWidth] = useState(248)
-  const [rightWidth, setRightWidth] = useState(400)
   const [leftCollapsed, setLeftCollapsed] = useState(false)
-  const [rightCollapsed, setRightCollapsed] = useState(false)
-  const dragRef = useRef<{ side: 'left' | 'right'; startX: number; startWidth: number } | null>(null)
+  const dragRef = useRef<{ startX: number; startWidth: number } | null>(null)
   const selectedPathRef = useRef<string | null>(null)
   const projectRef = useRef<ProjectInfo | null>(null)
-  const chatPanelRef = useRef<ChatPanelHandle>(null)
   const gitTimerRef = useRef<number | null>(null)
   const dialog = useDialog()
   const toast = useToast()
@@ -75,7 +64,6 @@ export default function App() {
   }, [project])
 
   useEffect(() => {
-    void initPersistedSettings()
     initTheme()
   }, [])
 
@@ -83,7 +71,7 @@ export default function App() {
     let cancelled = false
     const boot = async () => {
       try {
-        const [bundle, activeModel] = await Promise.all([getProjectBundle(), getActiveModel()])
+        const bundle = await getProjectBundle()
         if (cancelled) return
         if (!bundle.project || bundle.projects.length === 0) {
           setBootError('未找到激活的笔记项目，请确认 NoteFlow 服务（server.mjs）已启动')
@@ -94,8 +82,6 @@ export default function App() {
         const chosen = (wanted && bundle.projects.find((p) => p.id === wanted)) || bundle.project
         setProjects(bundle.projects)
         setProject(chosen)
-        setModel(activeModel)
-        if (!activeModel) setSetupOpen(true)
       } catch (err) {
         if (!cancelled) setBootError(`连接 QuickForge 服务失败：${err instanceof Error ? err.message : String(err)}`)
       }
@@ -213,7 +199,6 @@ export default function App() {
     setDirtyTabs({})
     setNoteList([])
     setHistoryPath(null)
-    setAiResult(null)
     setSearchOpen(false)
     setTreeVersion((v) => v + 1)
     if (nextProjects) setProjects(nextProjects)
@@ -356,11 +341,7 @@ export default function App() {
     const onMove = (event: MouseEvent) => {
       const drag = dragRef.current
       if (!drag) return
-      if (drag.side === 'left') {
-        setLeftWidth(Math.min(LEFT_MAX, Math.max(LEFT_MIN, drag.startWidth + event.clientX - drag.startX)))
-      } else {
-        setRightWidth(Math.min(RIGHT_MAX, Math.max(RIGHT_MIN, drag.startWidth - (event.clientX - drag.startX))))
-      }
+      setLeftWidth(Math.min(LEFT_MAX, Math.max(LEFT_MIN, drag.startWidth + event.clientX - drag.startX)))
     }
     const onUp = () => {
       dragRef.current = null
@@ -375,8 +356,8 @@ export default function App() {
     }
   }, [])
 
-  const startDrag = (side: 'left' | 'right') => (event: React.MouseEvent) => {
-    dragRef.current = { side, startX: event.clientX, startWidth: side === 'left' ? leftWidth : rightWidth }
+  const startDrag = (event: React.MouseEvent) => {
+    dragRef.current = { startX: event.clientX, startWidth: leftWidth }
     document.body.style.cursor = 'col-resize'
     document.body.style.userSelect = 'none'
   }
@@ -438,10 +419,6 @@ export default function App() {
   }, [shortcuts, createNote, closeTab, openTodayNote])
 
   /* ---------- 回调 ---------- */
-  const handleNoteContent = useCallback((path: string, content: string) => {
-    setNoteContext((prev) => (prev?.path === path && prev.content === content ? prev : { path, content }))
-  }, [])
-
   const handleCreated = useCallback(
     (path: string) => {
       openPath(path)
@@ -462,17 +439,6 @@ export default function App() {
     setTreeVersion((v) => v + 1)
     scheduleGitCommit('插入图片')
   }, [scheduleGitCommit])
-
-  const handleAgentEnd = useCallback((lastAssistantText: string) => {
-    scheduleGitCommit('AI 对话')
-    if (lastAssistantText.trim()) setAiResult({ text: lastAssistantText.trim(), at: Date.now() })
-  }, [scheduleGitCommit])
-
-  /** 选中文字 AI 操作：展开右栏并把 prompt 发到对话 */
-  const handleAskAi = useCallback((prompt: string) => {
-    setRightCollapsed(false)
-    chatPanelRef.current?.ask(prompt)
-  }, [])
 
   const openHistory = useCallback((path: string) => setHistoryPath(path), [])
 
@@ -544,8 +510,6 @@ export default function App() {
     [applyPathMoved, scheduleGitCommit],
   )
 
-  const handleModelChange = useCallback((next: ModelLike) => setModel(next), [])
-
   if (bootError) {
     return (
       <div className="flex h-screen flex-col items-center justify-center gap-3 bg-background text-muted-foreground">
@@ -609,20 +573,11 @@ export default function App() {
           >
             <Settings2 className="size-4" />
           </button>
-          {rightCollapsed ? (
-            <button type="button" title="展开对话" onClick={() => setRightCollapsed(false)} className="ml-2 rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground">
-              <PanelRight className="size-4" />
-            </button>
-          ) : (
-            <button type="button" title="收起对话" onClick={() => setRightCollapsed(true)} className="ml-2 rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground">
-              <PanelRightClose className="size-4" />
-            </button>
-          )}
         </span>
         <WindowButtons />
       </header>
 
-      {/* 三栏主体（key=项目 id：切换项目时整体重挂载，文件树/编辑器/对话面板状态全部按项目重置） */}
+      {/* 主体（key=项目 id：切换项目时整体重挂载，文件树/编辑器状态按项目重置） */}
       <div key={project?.id ?? 'booting'} className="flex min-h-0 flex-1">
         {!leftCollapsed && (
           <>
@@ -641,7 +596,7 @@ export default function App() {
                 <p className="p-3 text-xs text-muted-foreground/70">连接服务中…</p>
               )}
             </aside>
-            <div onMouseDown={startDrag('left')} className="w-1 shrink-0 cursor-col-resize bg-transparent transition-colors hover:bg-indigo-500/40" />
+            <div onMouseDown={startDrag} className="w-1 shrink-0 cursor-col-resize bg-transparent transition-colors hover:bg-indigo-500/40" />
           </>
         )}
 
@@ -659,16 +614,13 @@ export default function App() {
                   projectId={project.id}
                   path={selectedPath}
                   onSaved={handleSaved}
-                  onContentChange={handleNoteContent}
                   onFileMoved={handleFileMoved}
                   onDirtyChange={handleDirtyChange}
-                  onAskAi={handleAskAi}
                   onOpenHistory={openHistory}
                   onFileCreated={handleFileCreated}
                   noteList={noteList}
                   onOpenWiki={handleOpenWiki}
                   onOpenPath={openPath}
-                  aiResult={aiResult}
                 />
               </div>
               <HistoryPanel
@@ -683,33 +635,13 @@ export default function App() {
             <p className="p-6 text-sm text-muted-foreground/70">加载中…</p>
           )}
         </main>
-
-        {!rightCollapsed && (
-          <>
-            <div onMouseDown={startDrag('right')} className="w-1 shrink-0 cursor-col-resize bg-transparent transition-colors hover:bg-indigo-500/40" />
-            <aside className="shrink-0 border-l border-border bg-background" style={{ width: rightWidth }}>
-              {project ? (
-                <ChatPanel
-                  ref={chatPanelRef}
-                  projectId={project.id}
-                  noteContext={noteContext}
-                  onOpenSetup={() => setSetupOpen(true)}
-                  model={model}
-                  onModelChange={handleModelChange}
-                  onAgentEnd={handleAgentEnd}
-                />
-              ) : null}
-            </aside>
-          </>
-        )}
       </div>
 
       {project && (
         <SearchPalette open={searchOpen} projectId={project.id} onClose={() => setSearchOpen(false)} onSelect={openPath} />
       )}
       {project && <CommandRunner projectId={project.id} />}
-      <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} onOpenSetup={() => { setSettingsOpen(false); setSetupOpen(true) }} notesDir={project?.path} />
-      <SetupDialog open={setupOpen} onClose={() => setSetupOpen(false)} onConfigured={handleModelChange} />
+      <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} notesDir={project?.path} />
     </div>
   )
 }

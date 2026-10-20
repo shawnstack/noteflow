@@ -1,5 +1,5 @@
 /**
- * 统一文件类型识别（中栏预览分发 / AI 产物列表共用，单一来源）。
+ * 统一文件类型识别（中栏预览分发共用，单一来源）。
  *
  * 三层检测：
  *  L1 扩展名 → kind（已知扩展名表，覆盖最广）
@@ -9,7 +9,7 @@
  *     - `#!` shebang → code（并解析出解释器语言）
  *     - 其余 → code（plaintext 阅读）
  *
- * 历史教训：`artifact-preview-utils.ts` 与 `tool-artifacts.ts` 各维护一份规则时
+ * 历史教训：早期 `artifact-preview-utils.ts` 与 AI 产物列表各维护一份规则时，
  * `.mdx` 曾在一处算 markdown、另一处不算。此模块是唯一规则来源：
  * `.mdx` 统一按 code 处理（react-markdown `skipHtml` 无法渲染 JSX，
  * 富预览必然残缺，源码视图更诚实）。

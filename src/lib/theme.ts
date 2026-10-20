@@ -1,5 +1,3 @@
-import { SETTINGS_EVENT } from '../components/SettingsDialog'
-
 export type ThemePreference = 'light' | 'dark' | 'system'
 
 export const THEME_KEY = 'noteflow.theme'
@@ -66,9 +64,8 @@ export function initTheme() {
   }
 }
 
-/** 设置对话框用：持久化 + 应用 + 广播（与其他设置项一致的事件模式） */
+/** 设置对话框用：持久化 + 应用（即时生效，无需广播） */
 export function setThemePreference(pref: ThemePreference) {
   localStorage.setItem(THEME_KEY, pref)
   applyTheme(pref)
-  window.dispatchEvent(new CustomEvent(SETTINGS_EVENT, { detail: { key: THEME_KEY, value: pref } }))
 }

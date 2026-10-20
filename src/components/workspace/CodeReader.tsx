@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Check, Copy, WrapText } from 'lucide-react'
 import { HIGHLIGHT_TOKEN_CLASSES, highlightCode, type CodeHighlightSegment } from '@/lib/code-highlight'
-import { copyTextToClipboard } from '@/lib/message-utils'
+import { copyTextToClipboard } from '@/lib/utils'
 import { cn } from '@/lib/utils'
 
 /**

@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react'
 import { RefreshCw } from 'lucide-react'
-import { DocxAttachmentPreview, ExcelAttachmentPreview, PdfAttachmentPreview } from '@/components/chat/surface/AttachmentPreview'
+import { DocxAttachmentPreview, ExcelAttachmentPreview, PdfAttachmentPreview } from './AttachmentPreview'
 import { workspacePreviewUrl, type DocumentFormat } from './artifact-preview-utils'
 
 /**
  * 中栏文档阅读器（PDF / DOCX / Excel）：
  * 经 workspace 预览接口按路径取二进制（该接口对这些扩展名在白名单内），
- * 复用聊天附件的渲染管线（pdfjs / docx-preview / xlsx，含 docx XSS 净化）。
+ * 文档预览渲染管线（pdfjs / docx-preview / xlsx，含 docx XSS 净化）。
  */
 
 type DocumentReaderProps = {

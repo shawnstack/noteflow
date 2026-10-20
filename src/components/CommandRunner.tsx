@@ -1,6 +1,6 @@
 /**
  * 命令执行面板：监听 quickforge 原版 `quickforge:execute-markdown-command`
- * 窗口事件（聊天与中栏 markdown 的 ▶ 按钮都会派发），经确认后通过
+ * 窗口事件（中栏 markdown 的 ▶ 按钮派发），经确认后通过
  * QuickForge 的 run_command 工具直调执行，底部面板展示输出。
  * 与 quickforge 的差异：无终端 dock，输出以只读面板呈现。
  */

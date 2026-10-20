@@ -117,8 +117,8 @@ not recommended`，可忽略。
 - 前端库由 vite 构建时打进 `dist/` bundle，运行时不需要 node_modules；
 - electron-builder 按**生产依赖树**收集 node_modules，挪走后包内只剩
   quickforge 依赖链（约 146 个包），dmg 从 ~300MB 降到 149MB；
-- `@earendil-works/pi-agent-core` / `pi-ai` 前端要用，但 quickforge 自身也依赖
-  它们，会随其依赖树自动进包，无需重复声明。
+- `@earendil-works/pi-agent-core` / `pi-ai` 由 quickforge 自身依赖，
+  会随其依赖树自动进包，NoteFlow 前端不再直接声明（v1.3 移除对话功能后）。
 
 ## 4. 运行架构（打包产物如何工作）
 
