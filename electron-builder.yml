@@ -16,8 +16,11 @@ files:
   - fs-endpoint.mjs
   - dist/**
   - package.json
-  # 托盘图标随包携带（生产环境 build/ 不会整体打包）
+  # 托盘图标随包携带（生产环境 build/ 不会整体打包）。
+  # 16/24/32 对应 100%/150%/200% DPI，运行时按 scaleFactor 选取。
   - build/icons/16x16.png
+  - build/icons/24x24.png
+  - build/icons/32x32.png
 asar: false
 mac:
   category: public.app-category.productivity

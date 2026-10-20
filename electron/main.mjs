@@ -16,7 +16,7 @@
  *     存在则直接 attach 复用（避免两个 QuickForge 实例争用 ~/.noteflow 的 sqlite），
  *     否则本进程内启动全套服务；端口被占时降级为随机端口。
  */
-import { app, BrowserWindow, Menu, Tray, dialog, ipcMain, nativeImage, nativeTheme, shell } from 'electron'
+import { app, BrowserWindow, Menu, Tray, dialog, ipcMain, nativeImage, nativeTheme, screen, shell } from 'electron'
 import { basename, dirname, join, resolve } from 'node:path'
 import { existsSync } from 'node:fs'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -250,14 +250,34 @@ function focusOrCreateWindow() {
   return createWindow()
 }
 
+/**
+ * Windows 托盘会忽略 nativeImage 的 scaleFactor，把位图像素直接铺进图标槽。
+ * 槽位物理像素 ≈ 16 × DPI（100%→16、150%→24、200%→32）。
+ * 源图只有 16/24/32，取不小于目标的最小一档，避免放大 16px 发糊。
+ */
+function trayIconPx() {
+  const factor = screen.getPrimaryDisplay()?.scaleFactor || 1
+  const target = Math.max(16, Math.round(16 * factor))
+  if (target <= 16) return 16
+  if (target <= 24) return 24
+  return 32
+}
+
+function loadTrayIcon() {
+  const px = trayIconPx()
+  const candidates = [px, 32, 24, 16].filter((size, i, all) => all.indexOf(size) === i)
+  for (const size of candidates) {
+    const path = join(ROOT, `build/icons/${size}x${size}.png`)
+    if (!existsSync(path)) continue
+    const icon = nativeImage.createFromPath(path)
+    if (!icon.isEmpty()) return icon
+  }
+  return nativeImage.createFromPath(join(ROOT, 'build/icon.png'))
+}
+
 /** 创建系统托盘：win/linux 左键点图标显示窗口，右键菜单含“显示/退出” */
 function createTray() {
-  // 优先 16px 专用图（打包配置已带上）；缺失则退回主图标
-  const iconPath = join(ROOT, 'build/icons/16x16.png')
-  const icon = existsSync(iconPath)
-    ? nativeImage.createFromPath(iconPath)
-    : nativeImage.createFromPath(join(ROOT, 'build/icon.png'))
-  tray = new Tray(icon)
+  tray = new Tray(loadTrayIcon())
   tray.setToolTip('NoteFlow')
   tray.setContextMenu(
     Menu.buildFromTemplate([
@@ -268,6 +288,10 @@ function createTray() {
   )
   // mac 上单击托盘 = 打开菜单，不另绑 click（显示窗口走 dock）
   if (process.platform !== 'darwin') tray.on('click', () => focusOrCreateWindow())
+  // 缩放/换屏后按新 DPI 重载，避免继续用旧尺寸
+  screen.on('display-metrics-changed', () => {
+    if (tray && !tray.isDestroyed()) tray.setImage(loadTrayIcon())
+  })
 }
 
 /** IPC 回包：消息来自哪个窗口就操作哪个窗口（多窗口各自控制自己） */
