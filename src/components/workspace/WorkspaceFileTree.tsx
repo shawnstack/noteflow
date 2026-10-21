@@ -84,7 +84,7 @@ function WorkspaceTreeRows({ entries, depth, props }: {
           draggable
           onDragStart={(event) => props.onNodeDragStart?.(node.path, event)}
           className={`group flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-sm transition-colors ${
-            props.dropTargetPath === node.path ? 'ring-1 ring-inset ring-primary bg-primary/10' : isSelected ? '' : ''
+            props.dropTargetPath === node.path ? 'ring-1 ring-inset ring-primary bg-primary/10' : isSelected ? 'bg-accent text-foreground' : 'hover:bg-muted'
           }`}
           style={{ paddingLeft: `${0.5 + depth * 0.75}rem` }}
           onClick={() => {
