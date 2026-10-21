@@ -8,10 +8,15 @@
  * NoteFlow 专属 QuickForge 实例。
  */
 import { spawn } from 'node:child_process'
+import { createRequire } from 'node:module'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)))
+// Node ≥18.20/20 在 Windows 上禁止无 shell 直接 spawn .cmd/.bat（EINVAL），
+// 因此 vite 不经 npm.cmd、electron 不经 npx，均直接解析可执行入口。
+const VITE_BIN = resolve(ROOT, 'node_modules/vite/bin/vite.js')
+const ELECTRON_BIN = createRequire(import.meta.url)('electron') // electron 可执行文件绝对路径
 // vite 端口可用 NOTEFLOW_DEV_PORT 覆盖（默认与纯 Web dev 相同的 5179）
 const DEV_PORT = process.env.NOTEFLOW_DEV_PORT || '5179'
 const DEV_URL = `http://localhost:${DEV_PORT}`
@@ -69,12 +74,7 @@ function shutdown() {
 process.on('SIGINT', shutdown)
 process.on('SIGTERM', shutdown)
 
-run(
-  'vite',
-  process.platform === 'win32' ? 'npm.cmd' : 'npm',
-  ['run', 'dev:web', '--', '--port', DEV_PORT, '--strictPort'],
-  '\x1b[35m',
-)
+run('vite', process.execPath, [VITE_BIN, '--port', DEV_PORT, '--strictPort'], '\x1b[35m')
 
 if (!(await waitForVite(DEV_URL))) {
   process.stderr.write(`[dev-electron] vite dev server (${DEV_URL}) 60s 内未就绪，退出\n`)
@@ -83,8 +83,8 @@ if (!(await waitForVite(DEV_URL))) {
 
 const electron = run(
   'electron',
-  'npx',
-  ['electron', 'electron/main.mjs'],
+  ELECTRON_BIN,
+  ['electron/main.mjs'],
   '\x1b[33m',
   { ...process.env, VITE_DEV_SERVER_URL: DEV_URL },
 )

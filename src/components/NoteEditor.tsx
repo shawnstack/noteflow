@@ -71,6 +71,12 @@ type Props = {
 
 const DRAFT_PREFIX = 'noteflow.draft:'
 
+/** 分屏编辑栏宽度占比范围（20% ~ 80%） */
+const SPLIT_RATIO_MIN = 0.2
+const SPLIT_RATIO_MAX = 0.8
+const clampSplitRatio = (ratio: number) => Math.min(SPLIT_RATIO_MAX, Math.max(SPLIT_RATIO_MIN, ratio))
+
+
 /** 草稿 key 按项目隔离（多窗口/多项目互不串台） */
 const draftKey = (projectId: string, path: string) => `${DRAFT_PREFIX}${projectId}:${path}`
 /** 读取草稿：优先项目隔离 key，兼容旧版全局 key */
@@ -102,6 +108,11 @@ export function NoteEditor({ projectId, path, onSaved, onFileMoved, onDirtyChang
   const [backlinks, setBacklinks] = useState<{ path: string; line: number | null; text: string }[] | null>(null)
   const [backlinksOpen, setBacklinksOpen] = useState(true)
   const [outlineOpen, setOutlineOpen] = useState(false)
+  /** 分屏模式下编辑栏宽度占比（拖动分割线调整，默认对半） */
+  const [splitRatio, setSplitRatio] = useState(0.5)
+  /** 分屏 flex 容器（拖动时按容器宽度换算比例） */
+  const splitPaneRef = useRef<HTMLDivElement>(null)
+  const splitDragRef = useRef<{ startX: number; startRatio: number; width: number } | null>(null)
   /** 智能识别的文件类型（路径 + 内容嗅探，见 lib/file-kind.ts） */
   const [kind, setKind] = useState<FileKind>('markdown')
   const [fileSize, setFileSize] = useState<number | null>(null)
@@ -118,6 +129,48 @@ export function NoteEditor({ projectId, path, onSaved, onFileMoved, onDirtyChang
   /** 智能识别结果派生：文本类才提供编辑/分屏/保存；code 走 CodeReader + 符号大纲 */
   const canEdit = isTextEditableKind(kind)
   const isCodeKind = kind === 'code'
+
+  /* ---------- 分屏拖拽调宽 ---------- */
+  // 拖动期间直接改 textarea 的 inline width（不 setState），避免整树每帧重渲染；
+  // 松手时一次性提交比例，React 再以相同值接管 style。
+  useEffect(() => {
+    const onMove = (event: MouseEvent) => {
+      const drag = splitDragRef.current
+      if (!drag) return
+      const ratio = clampSplitRatio(drag.startRatio + (event.clientX - drag.startX) / drag.width)
+      const editor = textareaRef.current
+      if (editor) editor.style.width = `${(ratio * 100).toFixed(3)}%`
+    }
+    const endDrag = () => {
+      if (!splitDragRef.current) return
+      splitDragRef.current = null
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+    }
+    const onUp = (event: MouseEvent) => {
+      const drag = splitDragRef.current
+      if (!drag) return
+      endDrag()
+      setSplitRatio(clampSplitRatio(drag.startRatio + (event.clientX - drag.startX) / drag.width))
+    }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+    return () => {
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+      endDrag()
+    }
+  }, [])
+
+  const startSplitDrag = (event: React.MouseEvent) => {
+    if (event.button !== 0) return
+    const pane = splitPaneRef.current
+    if (!pane || pane.clientWidth <= 0) return
+    splitDragRef.current = { startX: event.clientX, startRatio: splitRatio, width: pane.clientWidth }
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+    event.preventDefault()
+  }
 
   const reload = useCallback(
     async (target: string) => {
@@ -785,7 +838,7 @@ export function NoteEditor({ projectId, path, onSaved, onFileMoved, onDirtyChang
         {loading ? (
           <p className="p-6 text-sm text-muted-foreground/70">加载中…</p>
         ) : (
-          <div className="flex h-full">
+          <div className="flex h-full" ref={splitPaneRef}>
             {mode !== 'read' && (
               <textarea
                 ref={textareaRef}
@@ -845,13 +898,15 @@ export function NoteEditor({ projectId, path, onSaved, onFileMoved, onDirtyChang
                 onBlur={() => window.setTimeout(() => setWikiMenu(null), 120)}
                 spellCheck={false}
                 placeholder={isMarkdownNote ? '# 开始书写…' : ''}
-                className={`h-full w-full resize-none bg-transparent p-6 font-mono text-[13.5px] leading-7 text-foreground outline-none ${
-                  mode === 'split' ? 'w-1/2 border-r border-border' : ''
-                }`}
+                className={`h-full shrink-0 resize-none bg-transparent p-6 font-mono text-[13.5px] leading-7 text-foreground outline-none ${mode === 'split' ? '' : 'w-full'}`}
+                style={mode === 'split' ? { width: `${splitRatio * 100}%` } : { width: '100%' }}
               />
             )}
+            {mode === 'split' && (
+              <div onMouseDown={startSplitDrag} className="w-1 shrink-0 cursor-col-resize bg-transparent transition-colors hover:bg-indigo-500/40" />
+            )}
             {mode !== 'edit' && (
-              <div className={`relative flex h-full min-w-0 flex-col ${mode === 'split' ? 'w-1/2' : 'w-full'}`}>
+              <div className={`relative flex h-full min-w-0 flex-col ${mode === 'split' ? 'flex-1' : 'w-full'}`}>
                 <div className="min-h-0 flex-1 overflow-y-auto" ref={previewRef}>
                   {kind === 'image' ? (
                     <ImageReader projectId={projectId} path={path} />
