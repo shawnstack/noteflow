@@ -14,6 +14,7 @@
  *  qfPort      QuickForge 服务端口（默认 NOTEFLOW_QF_PORT / 5178）
  *  dataDir     数据目录（默认 ~/.noteflow）
  *  notesDir    笔记目录（默认 <项目>/notes；Electron 打包态默认 ~/Documents/NoteFlow）
+ *              仅在项目注册表为空时自动创建并注册，已有项目时不改动激活项目
  *  serveStatic 是否托管 dist 静态文件 + /api 反代（dev 模式为 false，前端由 vite 提供）
  *  inline      QuickForge 是否运行于当前进程（Electron 用）
  *  log         日志函数
@@ -95,7 +96,6 @@ export async function startNoteFlow(options = {}) {
   log('启动 QuickForge 服务（NoteFlow 专属实例）…', inline ? '（inline 模式：运行于当前进程）' : '')
   log(`数据目录: ${dataDir}`)
   log(`笔记目录: ${notesDir}`)
-  await mkdir(notesDir, { recursive: true })
 
   const app = await startQuickForge({
     host: '127.0.0.1',
@@ -125,19 +125,34 @@ export async function startNoteFlow(options = {}) {
     log('警告', `设置 agent-access-mode 失败: ${err.message}`)
   }
 
-  // 2) 注册并激活 notes 目录为项目（幂等：同一路径永远返回同一 projectId）
-  const projectRes = await apiWithRetry('注册笔记目录', () =>
-    fetch(`${base}/api/project/path`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ path: notesDir }),
-    }),
-  ).catch(async (err) => {
+  // 2) 仅首次启动（项目注册表为空）时创建并注册 notes 目录。
+  //    已有项目时保持上次激活项目：/api/project/path 会强制切换激活项目，
+  //    每次启动都调用会让用户删除的默认项目复活并覆盖上次选择。
+  const projectsRes = await apiWithRetry('读取项目列表', () => fetch(`${base}/api/project`)).catch(async (err) => {
     await app.stop().catch(() => {})
     throw err
   })
-  const projectPayload = await projectRes.json()
-  log(`笔记项目: ${projectPayload.project?.id} -> ${projectPayload.project?.path}`)
+  const { projects = [] } = await projectsRes.json()
+  if (projects.length === 0) {
+    await mkdir(notesDir, { recursive: true }).catch(async (err) => {
+      await app.stop().catch(() => {})
+      throw err
+    })
+    const projectRes = await apiWithRetry('注册笔记目录', () =>
+      fetch(`${base}/api/project/path`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ path: notesDir }),
+      }),
+    ).catch(async (err) => {
+      await app.stop().catch(() => {})
+      throw err
+    })
+    const projectPayload = await projectRes.json()
+    log(`笔记项目: ${projectPayload.project?.id} -> ${projectPayload.project?.path}`)
+  } else {
+    log('项目注册表已存在', `保持上次激活项目（共 ${projects.length} 个），跳过默认笔记目录注册`)
+  }
 
   if (!serveStatic) {
     log('后端就绪', 'dev 模式下前端由 vite 提供（npm run dev），本进程仅维护 QuickForge 服务')

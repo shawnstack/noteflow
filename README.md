@@ -140,7 +140,7 @@ npm run electron:build   # 打包 dmg（release/NoteFlow-<版本>-arm64.dmg，ma
 - `server.mjs` 通过 QuickForge 的 `public-api`（`startQuickForge`）启动一个**专属服务实例**
   （独立数据目录、强制新进程，不复用正在运行的 QuickForge），随后：
   1. 设置 `agent-access-mode=full-access`（允许前端直调 `write_file` 工具保存笔记）；
-  2. 注册并激活 `notes/` 目录为工作区项目。
+  2. 首次启动（项目注册表为空）时创建并注册 `notes/` 目录为工作区项目；已有项目时保持上次激活项目不变。
 - `POST /api/noteflow/asset`（NoteFlow 自有端点）：编辑器粘贴图片的二进制落盘
   （quickforge 的 `write_file` 只收 UTF-8 文本）；生产由 `server.mjs` 处理，开发由 `vite.config.ts` 的 middleware 处理（共用 `asset-endpoint.mjs`）。
 - **版本历史**：`notes/` 是独立 git 仓库（首启自动 `git init`，`.trash/` 已排除），

@@ -10,7 +10,7 @@
  *  1. 启动 NoteFlow 专属 QuickForge 实例（独立数据目录 ~/.noteflow，
  *     与桌面版 ~/.quickforge 互不干扰；不复用已运行实例）；
  *  2. 开启 agent-access-mode=full-access（允许前端直调 write_file 保存笔记）；
- *  3. 注册并激活 notes/ 目录为工作区项目；
+ *  3. 首次启动（项目注册表为空）时注册并激活 notes/ 目录为工作区项目；已有项目时保持上次激活项目；
  *  4. 生产模式（npm start = node server.mjs --serve-static）：静态托管 dist/ 并将 /api 反向代理到 QuickForge 服务。
  *
  * 环境变量：
