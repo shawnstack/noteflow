@@ -2,7 +2,7 @@
  * QuickForge HTTP API 客户端。
  * 全部走相对路径 /api（dev: vite 代理；生产: server.mjs 反向代理）。
  */
-import type { ChildrenResponse, FileContentResponse, ProjectInfo, WorkspaceEntry } from './types'
+import type { FileContentResponse, ProjectInfo, WorkspaceEntry } from './types'
 
 async function jsonFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, { cache: 'no-store', ...init })
@@ -55,12 +55,6 @@ export async function removeProject(id: string): Promise<ProjectBundle> {
 }
 
 /* ---------- 文件 ---------- */
-
-export async function listChildren(projectId: string, path: string, cursor?: string | null): Promise<ChildrenResponse> {
-  const params = new URLSearchParams({ projectId, path })
-  if (cursor) params.set('cursor', cursor)
-  return jsonFetch<ChildrenResponse>(`/api/workspace/children?${params}`)
-}
 
 export async function readFileContent(projectId: string, path: string): Promise<FileContentResponse> {
   const params = new URLSearchParams({ projectId, path })

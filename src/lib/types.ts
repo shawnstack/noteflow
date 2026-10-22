@@ -6,14 +6,6 @@ export type WorkspaceEntry = {
   type: 'file' | 'directory'
 }
 
-export type ChildrenResponse = {
-  root: string
-  path: string
-  entries: WorkspaceEntry[]
-  nextCursor: string | null
-  truncated: boolean
-}
-
 export type FileContentResponse = {
   content: string
   size: number

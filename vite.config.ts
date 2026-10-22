@@ -2,7 +2,6 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { fileURLToPath } from 'node:url'
-import { resolve } from 'node:path'
 // @ts-expect-error node 端共用模块（无类型声明）
 import { createAssetEndpoint, defaultNotesDir } from './asset-endpoint.mjs'
 // @ts-expect-error node 端共用模块（无类型声明）

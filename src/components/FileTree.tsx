@@ -9,7 +9,6 @@ import {
   Copy,
   FolderOpen,
   FolderPlus,
-  MessageSquare,
   PencilLine,
   RefreshCw,
   RotateCcw,
@@ -165,7 +164,7 @@ export function FileTree({ projectId, selectedPath, onSelect, onCreated, onPathM
       const generation = directory.generation || Date.now()
       dispatchTree({ type: 'request', path: normalized, generation, append: true, cursor: directory.nextCursor })
       try {
-        const response = await getWorkspaceChildren(projectId, normalized, { cursor: directory.nextCursor })
+        const response = await getWorkspaceChildren(projectId, normalized, directory.nextCursor)
         dispatchTree({ type: 'success', path: normalized, generation, entries: response.entries, nextCursor: response.nextCursor, append: true })
       } catch (error) {
         dispatchTree({ type: 'failure', path: normalized, generation, error: error instanceof Error ? error.message : String(error) })
@@ -270,10 +269,6 @@ export function FileTree({ projectId, selectedPath, onSelect, onCreated, onPathM
         { label: '删除（移入回收站）', icon: Trash2, danger: true, onSelect: () => void trashTarget(target.path, target.kind) },
       )
     } else {
-      if (target.path.endsWith('.md')) {
-        menuItems.push({ label: '与此笔记对话', icon: MessageSquare, onSelect: () => chatWithNote(target.path) })
-        menuItems.push({ separator: true })
-      }
       menuItems.push(
         { label: '重命名', icon: PencilLine, onSelect: () => void renameTarget(target.path) },
         { label: '复制路径', icon: Copy, onSelect: () => void copyPath(target.path) },
@@ -387,12 +382,6 @@ export function FileTree({ projectId, selectedPath, onSelect, onCreated, onPathM
     } catch (error) {
       toast.error(`打开失败：${error instanceof Error ? error.message : String(error)}`)
     }
-  }
-
-  /** 选中笔记并直接去聊天（默认不附带笔记内容；需要附带时在对话栏点亮回形针） */
-  const chatWithNote = (path: string) => {
-    onSelect(path)
-    toast.success('已选中，可在对话栏点亮回形针附带此笔记')
   }
 
   /* ---------- 拖拽移动（宿主层冒泡捕获，与右键菜单同模式：行按钮 title 即节点路径） ---------- */

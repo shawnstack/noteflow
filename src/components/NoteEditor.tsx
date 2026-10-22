@@ -308,7 +308,7 @@ export function NoteEditor({ projectId, path, onSaved, onFileMoved, onDirtyChang
     if (path) onDirtyChange?.(path, dirty)
   }, [path, draft, dirty, onDirtyChange])
 
-  // 外部变更检测（AI 可能修改了当前笔记）：无未保存修改时静默重载，有则提示
+  // 外部变更检测（其他编辑器或进程可能修改了当前笔记）：无未保存修改时静默重载，有则提示
   useEffect(() => {
     if (!path || isNew) return
     let stopped = false

@@ -4,7 +4,7 @@
  * 走 NoteFlow 自有端点 POST /api/noteflow/fs 的 git op：服务端以 args 数组 spawn git、
  * 不经 shell —— macOS/Windows 引号语义统一（旧实现拼 shell 命令 + POSIX 单引号，
  * Windows cmd.exe 下引号原样传给 git、printf/[ -d ] 等语法均失效）。
- * 自动 commit：保存笔记 / AI 回复结束 / 文件移动后由 App 防抖触发。
+ * 自动 commit：保存笔记 / 文件移动后由 App 防抖触发。
  */
 import { post } from './api'
 

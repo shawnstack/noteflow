@@ -9,7 +9,7 @@
  *     - `#!` shebang → code（并解析出解释器语言）
  *     - 其余 → code（plaintext 阅读）
  *
- * 历史教训：早期 `artifact-preview-utils.ts` 与 AI 产物列表各维护一份规则时，
+ * 历史教训：早期预览分发与文件列表各维护一份规则时，
  * `.mdx` 曾在一处算 markdown、另一处不算。此模块是唯一规则来源：
  * `.mdx` 统一按 code 处理（react-markdown `skipHtml` 无法渲染 JSX，
  * 富预览必然残缺，源码视图更诚实）。
@@ -55,7 +55,7 @@ const SPECIAL_CODE_NAMES = new Set([
   '.babelrc',
 ])
 
-/** 仅凭路径判定 kind（不含内容嗅探；产物列表等无内容场景使用）。 */
+/** 仅凭路径判定 kind（不含内容嗅探；无内容的预览场景使用）。 */
 export function fileKindFromPath(path: string): FileKind {
   const normalized = path.replace(/\\/g, '/')
   const lower = normalized.toLowerCase()

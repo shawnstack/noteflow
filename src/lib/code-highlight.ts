@@ -1,9 +1,9 @@
 /**
- * Self-hosted lightweight syntax highlighting for chat code blocks.
+ * Self-hosted lightweight syntax highlighting for Markdown code blocks.
  *
- * The legacy chat rendered code with highlight.js; that dependency was removed
- * and blocks rendered verbatim (recorded as a migration gap). This module
- * restores a restrained subset of that behavior without adding any dependency:
+ * Earlier versions rendered code with highlight.js; that dependency was removed
+ * and blocks rendered verbatim. This module restores a restrained subset of
+ * that behavior without adding any dependency:
  * one linear, single-pass tokenizer per language family, with these invariants:
  *
  * - Monotonic scanning: every token is matched at the current index with flat,
@@ -29,8 +29,8 @@
  *     after `)` can be mistaken for a tag, spaced ones (`i < n`) are not.
  *   - Rust nested block comments, bash heredocs, `$()`-inner commands
  *     and YAML block scalars (`|` / `>`) are approximated.
- *   - Unterminated strings/comments while a message streams swallow to
- *     end-of-line / end-of-block and self-correct as more text arrives.
+ *   - Unterminated strings/comments stop at end-of-line / end-of-block instead
+ *     of swallowing subsequent content.
  *
  * Supported languages (see LANGUAGE_ALIASES): javascript/jsx, typescript/tsx,
  * json, bash/sh/shell, python, css/scss/less, html/xml/svg, sql, java, c,
@@ -193,9 +193,6 @@ const LANGUAGE_ALIASES: Record<string, string> = {
   nginx: 'nginx',
   nginxconf: 'nginx',
 }
-
-/** Every fenced spelling that gets a real tokenizer (docs/tests). */
-export const HIGHLIGHT_LANGUAGES: readonly string[] = Object.keys(LANGUAGE_ALIASES).sort()
 
 /**
  * Legacy plaintext registrations (`highlight.js` ships `plaintext` with the
@@ -1459,9 +1456,8 @@ const MARKDOWN_LINK_PATTERN = /\[[^\]\n]*\]\([^)\n]*\)/y
 /*
  * Legacy highlight.js `Markdown` grammar had no `<em>`/`<strong>` escapes of
  * its own either: `**`/`__` (not followed by whitespace) opened `strong` and a
- * single `*`/`_` opened `emphasis`. The legacy `end` patterns were not
- * newline-bounded; these are, so an unterminated `**` while a message streams
- * cannot swallow the rest of the block.
+ * single `*`/`_` opened `emphasis`. These patterns are newline-bounded, so an
+ * unterminated `**` cannot swallow the rest of the block.
  */
 const MARKDOWN_STRONG_PATTERN = /\*\*(?!\s)[^*\n]+\*\*|__(?!\s)[^_\n]+__/y
 const MARKDOWN_EMPHASIS_PATTERN = /\*(?![\s*])[^*\n]+\*|_(?![\s_])[^_\n]+_/y

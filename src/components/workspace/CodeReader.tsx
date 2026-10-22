@@ -5,7 +5,7 @@ import { copyTextToClipboard } from '@/lib/utils'
 import { cn } from '@/lib/utils'
 
 /**
- * 中栏代码阅读器（区别于聊天 `CodeBlock`：无高度上限、带行号）。
+ * 中栏代码阅读器（无高度上限、带行号）。
  *
  * 设计原则：纯阅读——常驻元素只有行号与高亮；语言/行数信息由主工具栏
  * 状态区显示，复制/换行收进 hover 浮现的幽灵按钮（零常驻视觉成本）。

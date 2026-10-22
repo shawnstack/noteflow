@@ -5,7 +5,7 @@
  * 与 quickforge 的差异：无终端 dock，输出以只读面板呈现。
  */
 import { useEffect, useRef, useState } from 'react'
-import { CircleStop, Play, Terminal, X } from 'lucide-react'
+import { CircleStop, Terminal, X } from 'lucide-react'
 import { runCommand } from '../lib/api'
 import { useDialog } from './Dialog'
 
@@ -112,20 +112,5 @@ export function CommandRunner({ projectId }: { projectId: string }) {
         {state.status === 'running' ? '…' : state.output || state.error || '（无输出）'}
       </pre>
     </div>
-  )
-}
-
-export function CommandRunnerTrigger({ command, className }: { command: string; className?: string }) {
-  return (
-    <button
-      type="button"
-      className={className}
-      title="运行此命令"
-      onClick={() => {
-        window.dispatchEvent(new CustomEvent('quickforge:execute-markdown-command', { detail: { command, confirm: command.includes('\n'), dangerous: /\b(rm\s+-rf|sudo|git\s+push|chmod|chown)\b/i.test(command) } }))
-      }}
-    >
-      <Play className="size-3.5" />
-    </button>
   )
 }

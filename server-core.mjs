@@ -112,7 +112,7 @@ export async function startNoteFlow(options = {}) {
   const base = app.url
   log(`QuickForge 服务就绪: ${base} (pid ${app.pid}${app.inline ? ', inline' : ''})`)
 
-  // 1) 允许前端直调 write_file / edit_file 工具（保存笔记、精确编辑）
+  // 1) 允许前端直调 QuickForge 文件工具（write_file 保存笔记；run_command / grep_files 供命令面板与全文搜索）
   try {
     await apiWithRetry('设置 agent-access-mode', () =>
       fetch(`${base}/api/storage/settings/key/agent-access-mode`, {
@@ -190,7 +190,7 @@ export async function startNoteFlow(options = {}) {
       },
       (proxyRes) => {
         res.writeHead(proxyRes.statusCode || 502, proxyRes.headers)
-        // SSE 等长连接必须立即发出响应头（首个 ping 可能 15s 后才到）
+        // 代理流式响应时必须立即发出响应头（首个数据块可能延迟到达）
         res.flushHeaders()
         proxyRes.pipe(res)
       },

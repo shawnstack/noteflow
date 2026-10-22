@@ -7,8 +7,7 @@ import { copyTextToClipboard, cn } from '@/lib/utils'
 /**
  * 中栏 Markdown 源码模式使用的整块代码渲染：标题栏（语言 + 复制按钮）+
  * 自研高亮器（`src/lib/code-highlight.ts`）。
- * 由原聊天 CodeBlock 精简而来：去掉了仅服务于 AI 消息的 SVG/Mermaid
- * 预览、灯箱与终端运行按钮（笔记渲染本就不启用这些能力）。
+ * 不提供 SVG/Mermaid 预览、灯箱与终端运行按钮（笔记渲染不需要这些能力）。
  */
 
 /** 围栏语言标记为 shell 类（MarkdownReader 的「▶ 运行」按钮据此显示）。 */
@@ -18,11 +17,6 @@ const SHELL_CODE_LANGUAGES = new Set([
 
 /** 标题栏复制按钮的「已复制」反馈时长。 */
 const COPY_BUTTON_FEEDBACK_MS = 2000
-
-/** 从 react-markdown `code` 元素的 `className` 提取围栏语言。 */
-export function codeBlockLanguage(className: string | undefined) {
-  return className?.match(/(?:^|\s)language-([^\s]+)/)?.[1]?.trim() || undefined
-}
 
 /** 标题栏语言标签：无语言信息时显示 plaintext。 */
 export function codeBlockLanguageLabel(language: string | undefined) {

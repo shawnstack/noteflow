@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { CalendarCheck, Feather, PanelLeft, PanelLeftClose, Search, Settings2, Unplug } from 'lucide-react'
+import { CalendarCheck, PanelLeft, PanelLeftClose, Search, Settings2, Unplug } from 'lucide-react'
 import { activateProject, getProjectBundle, listNotePaths, readFileMeta, registerProjectPath, removeProject as removeProjectApi, selectProjectDirectory, writeFileContent } from './lib/api'
 import { initTheme } from './lib/theme'
 import { getDesktopBridge, openProjectInNewWindow } from './lib/desktop'
@@ -533,7 +533,6 @@ export default function App() {
             <PanelLeftClose className="size-4" />
           </button>
         )}
-        <Feather className="size-4 text-indigo-500 dark:text-indigo-400" />
         <span className="text-sm font-medium tracking-wide">NoteFlow</span>
         {project && (
           <ProjectPicker

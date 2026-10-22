@@ -25,7 +25,6 @@ export const appTranslations = {
     workspaceLoadMore: 'Load more',
     workspaceLoading: 'Loading workspace...',
     workspaceLoadFailed: 'Failed to load workspace.',
-    openPreview: 'Open',
   },
   zh: {
     copyCode: '复制代码',
@@ -45,7 +44,6 @@ export const appTranslations = {
     workspaceLoadMore: '加载更多',
     workspaceLoading: '正在加载工作空间...',
     workspaceLoadFailed: '加载工作空间失败。',
-    openPreview: '打开',
   },
 } as const
 

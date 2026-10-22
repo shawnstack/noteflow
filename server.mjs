@@ -2,14 +2,15 @@
 /**
  * NoteFlow 启动器（CLI 薄壳）
  *
- * 布局：左 文件管理 · 中 文本阅读/编辑 · 右 AI 对话（自研三栏 UI）。
- * 能力：文件读写、工作区浏览、AI Agent（多厂商模型）、SSE 事件流
- *       全部复用 QuickForge 服务（@shawnstack/quickforge public-api）。
+ * 布局：左 文件管理 · 中 文本阅读/编辑（自研双栏 UI）。
+ * 能力：文件读写、工作区浏览、笔记搜索、git 版本历史
+ *       复用 QuickForge 服务（@shawnstack/quickforge public-api）。
  *
  * 实际逻辑在 server-core.mjs（与 Electron 桌面端共用）：
  *  1. 启动 NoteFlow 专属 QuickForge 实例（独立数据目录 ~/.noteflow，
  *     与桌面版 ~/.quickforge 互不干扰；不复用已运行实例）；
- *  2. 开启 agent-access-mode=full-access（允许前端直调 write_file 保存笔记）；
+ *  2. 开启 agent-access-mode=full-access（允许前端直调 QuickForge 文件工具：
+ *     write_file 保存笔记、run_command 运行命令、grep_files 全文搜索）；
  *  3. 首次启动（项目注册表为空）时注册并激活 notes/ 目录为工作区项目；已有项目时保持上次激活项目；
  *  4. 生产模式（npm start = node server.mjs --serve-static）：静态托管 dist/ 并将 /api 反向代理到 QuickForge 服务。
  *

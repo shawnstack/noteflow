@@ -1,8 +1,8 @@
-import { ChevronRight, Eye, Loader2 } from 'lucide-react'
+import { ChevronRight, Loader2 } from 'lucide-react'
 import { useState } from 'react'
 import { t } from '@/lib/i18n'
 import { DirectoryIcon, FileIcon } from './file-icon'
-import { inferArtifactKind, isBrowserPreviewablePath, isDocumentPreviewablePath, workspacePreviewUrl } from './artifact-preview-utils'
+import { inferArtifactKind, workspacePreviewUrl } from './artifact-preview-utils'
 import {
   normalizeWorkspaceTreePath,
   workspaceTreeCanLoadMore,
@@ -10,36 +10,23 @@ import {
   workspaceTreeRetryRequest,
   type WorkspaceTreeState,
 } from './workspace-tree-state'
-import type { GitChangedFile, WorkspaceTreeNode } from './workspace-types'
+import type { WorkspaceTreeNode } from './workspace-types'
 
 type WorkspaceFileTreeProps = {
   treeState: WorkspaceTreeState
   rootEntries: WorkspaceTreeNode[]
   expandedPaths: ReadonlySet<string>
   selectedPath?: string
-  gitStatuses?: Record<string, GitChangedFile>
   onToggleDirectory: (path: string) => void
   onRetryDirectory: (path: string) => void
   onLoadMore: (path: string) => void
   onSelectFile: (path: string) => void
-  directoriesExpandable?: boolean
-  /** 可预览入口（👁）。点击图片文件名 / Eye 按钮都会走这里。 */
-  onPreviewFile?: (path: string) => void
   /** 当前项目 id；提供时图片行展示真实缩略图，否则回退为类型图标。 */
   projectId?: string
   /** 行拖拽开始（文件树拖拽移动；NoteFlow 宿主层捕获） */
   onNodeDragStart?: (path: string, event: React.DragEvent) => void
   /** 拖拽悬停目标目录高亮（'.' 表示根） */
   dropTargetPath?: string | null
-}
-
-function statusLabel(file?: GitChangedFile) {
-  if (!file) return ''
-  if (file.status === 'added') return 'A'
-  if (file.status === 'deleted') return 'D'
-  if (file.status === 'renamed') return 'R'
-  if (file.status === 'untracked') return 'U'
-  return 'M'
 }
 
 /** 图片缩略图按浏览器原生懒加载，失败时回退到文件类型图标。 */
@@ -67,15 +54,12 @@ function WorkspaceTreeRows({ entries, depth, props }: {
   return entries.map((node) => {
     const nodePath = normalizeWorkspaceTreePath(node.path)
     const isDirectory = node.type === 'directory'
-    const canExpandDirectory = isDirectory && props.directoriesExpandable !== false
-    const expanded = canExpandDirectory && props.expandedPaths.has(nodePath)
+    const expanded = isDirectory && props.expandedPaths.has(nodePath)
     const directory = workspaceTreeDirectory(props.treeState, nodePath)
     const isSelected = props.selectedPath === node.path
-    const status = statusLabel(props.gitStatuses?.[node.path])
     const kind = isDirectory ? undefined : inferArtifactKind(node.path)
     const isImage = kind === 'image'
     const showThumbnail = Boolean(props.projectId) && isImage
-    const canPreview = Boolean(props.onPreviewFile) && (isBrowserPreviewablePath(node.path) || isDocumentPreviewablePath(node.path))
 
     return (
       <div key={node.path}>
@@ -83,24 +67,20 @@ function WorkspaceTreeRows({ entries, depth, props }: {
           type="button"
           draggable
           onDragStart={(event) => props.onNodeDragStart?.(node.path, event)}
-          className={`group flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-sm transition-colors ${
+          className={`flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-sm transition-colors ${
             props.dropTargetPath === node.path ? 'ring-1 ring-inset ring-primary bg-primary/10' : isSelected ? 'bg-accent text-foreground' : 'hover:bg-muted'
           }`}
           style={{ paddingLeft: `${0.5 + depth * 0.75}rem` }}
           onClick={() => {
-            if (canExpandDirectory) props.onToggleDirectory(nodePath)
-            else if (isDirectory) return
-            else if ((isImage || isDocumentPreviewablePath(node.path)) && props.onPreviewFile) props.onPreviewFile(node.path)
-            else props.onSelectFile(node.path)
+            if (isDirectory) props.onToggleDirectory(nodePath)
+            else props.onSelectFile(nodePath)
           }}
           title={node.path}
         >
           {isDirectory ? (
-            canExpandDirectory && directory.status === 'loading' && directory.entries.length === 0
+            directory.status === 'loading' && directory.entries.length === 0
               ? <Loader2 className="size-3.5 shrink-0 animate-spin" />
-              : canExpandDirectory
-                ? <ChevronRight className={`size-3.5 shrink-0 transition-transform ${expanded ? 'rotate-90' : ''}`} />
-                : <span className="w-3.5 shrink-0" />
+              : <ChevronRight className={`size-3.5 shrink-0 transition-transform ${expanded ? 'rotate-90' : ''}`} />
           ) : <span className="w-3.5 shrink-0" />}
           {isDirectory ? (
             <DirectoryIcon name={node.name} open={expanded} className="size-4 shrink-0" />
@@ -110,29 +90,6 @@ function WorkspaceTreeRows({ entries, depth, props }: {
             <FileIcon path={node.path} className="size-4 shrink-0" />
           )}
           <span className="min-w-0 flex-1 truncate">{node.name}</span>
-          {status ? <span className="shrink-0 font-mono text-xs text-emerald-600 dark:text-emerald-500">{status}</span> : null}
-          {canPreview ? (
-            <span
-              role="button"
-              tabIndex={0}
-              aria-label={t('openPreview')}
-              title={t('openPreview')}
-              className="-mr-1 shrink-0 rounded p-0.5 opacity-0 transition-opacity focus-visible:opacity-100 focus-visible:outline-none group-hover:opacity-100"
-              onClick={(event) => {
-                event.stopPropagation()
-                props.onPreviewFile?.(node.path)
-              }}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' || event.key === ' ') {
-                  event.preventDefault()
-                  event.stopPropagation()
-                  props.onPreviewFile?.(node.path)
-                }
-              }}
-            >
-              <Eye className="size-4" />
-            </span>
-          ) : null}
         </button>
         {isDirectory && expanded ? (
           <div>

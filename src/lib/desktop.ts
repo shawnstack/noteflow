@@ -35,11 +35,6 @@ export function getPlatform(): AppPlatform {
   return 'linux'
 }
 
-/** 是否运行在 Electron 桌面环境 */
-export function isDesktop(): boolean {
-  return getDesktopBridge() !== null
-}
-
 /**
  * 在独立窗口打开项目：
  * - Electron：走主进程（同项目已有窗口则聚焦，一项目一窗口）；

@@ -8,4 +8,4 @@ QuickForge uses a focused subset of the official Material Icon Theme SVG assets 
 - License: MIT
 - License copy included in the built application: `/licenses/material-icon-theme.txt`
 
-Only the SVG files referenced by the workspace file browser, Review list, Reader tabs, and artifact UI are included. Operational UI icons such as search, refresh, close, and preview continue to use Lucide.
+Only the SVG files referenced by the workspace file browser and reader tabs are included. Operational UI icons such as search, refresh, close, and preview continue to use Lucide.

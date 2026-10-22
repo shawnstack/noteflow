@@ -7,8 +7,7 @@ import { cn } from '@/lib/utils'
 
 /**
  * PDF / DOCX / Excel 内联预览（中栏 DocumentReader 使用）。
- * 由原聊天附件预览精简而来：输入固定为 workspace 预览接口取回的字节，
- * 不再处理聊天附件的 base64 payload。
+ * 输入固定为 workspace 预览接口取回的字节。
  *
  * 渲染内容不可信：docx-preview 输出在每次渲染后做净化（超链接与图片
  * scheme 白名单 + style 扫描），所有解码/解析都在 effect 中进行，

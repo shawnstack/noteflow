@@ -76,7 +76,6 @@ import folderServerIconUrl from '@/assets/icons/material-file-theme/folder-serve
 import folderSrcIconUrl from '@/assets/icons/material-file-theme/folder-src.svg'
 import folderTestIconUrl from '@/assets/icons/material-file-theme/folder-test.svg'
 import folderUtilsIconUrl from '@/assets/icons/material-file-theme/folder-utils.svg'
-import { getFileIconName } from './file-icon-utils'
 import type { MaterialDirectoryIconName, MaterialFileIconName } from './file-icon-utils'
 
 export const fileIconUrls: Record<MaterialFileIconName, string> = {
@@ -161,9 +160,4 @@ export const directoryIconUrls: Record<MaterialDirectoryIconName, string> = {
   'folder-src': folderSrcIconUrl,
   'folder-test': folderTestIconUrl,
   'folder-utils': folderUtilsIconUrl,
-}
-
-/** 非渲染层（DOM 装饰等）按路径取同款 Material 文件图标资源 URL。 */
-export function fileIconUrl(path: string): string {
-  return fileIconUrls[getFileIconName(path)]
 }

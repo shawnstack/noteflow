@@ -14,12 +14,6 @@ type ConfirmOptions = {
   variant?: 'default' | 'destructive'
 }
 
-type AlertOptions = {
-  title?: string
-  description: string
-  confirmLabel?: string
-}
-
 type DialogAction = {
   label: string
   onClick: () => void
@@ -213,24 +207,6 @@ export function showConfirm(options: ConfirmOptions): Promise<boolean> {
           autoFocus: options.variant !== 'destructive',
           enter: options.variant !== 'destructive',
           onClick: () => resolve(true),
-        },
-      ]}
-    />
-  ))
-}
-
-export function showAlert(options: AlertOptions | string): Promise<void> {
-  const normalized = typeof options === 'string' ? { description: options } : options
-  return renderMessageDialog<void>(() => undefined, (resolve) => (
-    <MessageDialog
-      title={normalized.title}
-      description={normalized.description}
-      onCancel={() => resolve()}
-      actions={[
-        {
-          label: normalized.confirmLabel ?? 'OK',
-          autoFocus: true,
-          onClick: () => resolve(),
         },
       ]}
     />

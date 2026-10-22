@@ -122,19 +122,6 @@ export function workspaceTreeRefreshPaths(state: WorkspaceTreeState, expandedPat
   return result.sort((left, right) => workspaceTreeDepth(left) - workspaceTreeDepth(right) || left.localeCompare(right))
 }
 
-export const loadedExpandedWorkspaceTreePaths = workspaceTreeRefreshPaths
-
-export function workspaceTreeRefreshCoverageSatisfied(
-  previous: WorkspaceTreeDirectoryState,
-  entries: WorkspaceTreeNode[],
-  nextCursor: string | null,
-): boolean {
-  if (!nextCursor) return true
-  if (entries.length < previous.entries.length) return false
-  const refreshedPaths = new Set(entries.map((entry) => normalizeWorkspaceTreePath(entry.path)))
-  return previous.entries.every((entry) => refreshedPaths.has(normalizeWorkspaceTreePath(entry.path)))
-}
-
 export function workspaceTreeCanLoadMore(state: WorkspaceTreeState, path: string): boolean {
   return Boolean(workspaceTreeDirectory(state, path).nextCursor)
 }
@@ -144,18 +131,4 @@ export function workspaceTreeRetryRequest(directory: WorkspaceTreeDirectoryState
     return { append: true, cursor: directory.requestCursor }
   }
   return { append: false }
-}
-
-export function missingWorkspaceTreePaths(state: WorkspaceTreeState, requestedPath: string, entries: WorkspaceTreeNode[]): string[] {
-  const path = normalizeWorkspaceTreePath(requestedPath)
-  const nextPaths = new Set(entries.filter((entry) => entry.type === 'directory').map((entry) => normalizeWorkspaceTreePath(entry.path)))
-  return Object.keys(state).filter((candidate) => {
-    if (candidate === path) return false
-    const parent = workspaceTreeParentPath(candidate)
-    return parent === path && !nextPaths.has(candidate)
-  })
-}
-
-export function workspaceTreePathsForRemoval(state: WorkspaceTreeState, roots: string[]): string[] {
-  return Object.keys(state).filter((path) => roots.some((root) => workspaceTreePathIsWithin(path, root)))
 }

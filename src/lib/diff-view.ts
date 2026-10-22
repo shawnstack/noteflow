@@ -1,8 +1,8 @@
 /**
- * write_file / edit_file 工具 diff 的结构化解析：
+ * unified diff 的结构化解析（笔记版本历史使用）：
  * 支持 unified（含无 hunk 的 pseudo-unified）与 raw 新文件文本，
- * 输出 old/new 解析行号（渲染时按行类型选择单列智能行号）及 hunk 间隙省略行。
- * 纯函数、零 DOM 依赖，renderDiff 消费其结果。
+ * 输出 old/new 解析行号（渲染时按行类型选择单列行号）及 hunk 间隙省略行。
+ * 纯函数、零 DOM 依赖，HistoryPanel 消费其结果。
  */
 
 type DiffLineKind = 'ctx' | 'add' | 'del'
@@ -26,33 +26,11 @@ interface DiffGapRow {
 
 export type DiffRow = DiffLineRow | DiffGapRow
 
-/** 单列行号：删除取旧侧，新增取新侧，上下文优先新侧并防御性回退旧侧。 */
-export function diffLineNumber(row: DiffLineRow): number | null {
-  if (row.kind === 'del') return row.oldNo
-  if (row.kind === 'add') return row.newNo
-  return row.newNo ?? row.oldNo
-}
-
-interface DiffFileInfo {
-  path: string
-  isNewFile: boolean
-}
-
 const HUNK_HEADER_RE = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/
 const DIFF_TRUNCATED_MARKERS = new Set(['[diff truncated]', '…[truncated]'])
 
 function isDiffTruncatedMarker(line: string) {
   return DIFF_TRUNCATED_MARKERS.has(line)
-}
-
-export function parseDiffFileInfo(diffText: string): DiffFileInfo | null {
-  const newMatch = /^\+\+\+ b\/(.+)$/m.exec(diffText)
-  if (!newMatch?.[1]) return null
-  const oldMatch = /^--- (?:a\/(.+)|\/dev\/null)$/m.exec(diffText)
-  return {
-    path: newMatch[1],
-    isNewFile: oldMatch !== null && oldMatch[1] === undefined,
-  }
 }
 
 export function parseDiffRows(diffText: string, format: DiffTextFormat = 'unified', truncated = false): DiffRow[] {
