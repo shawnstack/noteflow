@@ -98,11 +98,12 @@ jobs:
           name: noteflow-${{ matrix.platform }}
           if-no-files-found: error
           retention-days: 7
+          # latest*.yml 是 electron-builder 的更新清单；builder-debug.yml 属调试文件，排除
           path: |
             release/*.dmg
             release/*.exe
             release/*.blockmap
-            release/*.yml
+            release/latest*.yml
 
   release:
     needs: [version, build]
@@ -128,4 +129,4 @@ jobs:
             artifacts/**/*.dmg
             artifacts/**/*.exe
             artifacts/**/*.blockmap
-            artifacts/**/*.yml
+            artifacts/**/latest*.yml
