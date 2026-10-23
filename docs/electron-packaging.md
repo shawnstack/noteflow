@@ -213,3 +213,47 @@ NOTEFLOW_DEV_PORT=5599 NOTEFLOW_QF_PORT=5598 ... npm run dev:electron
 2. 升级 electron / quickforge 后重跑 §2.3 的内置 Node 版本检查；
 3. `ELECTRON_BUILDER_BINARIES_MIRROR=... npm run electron:build`；
 4. 按 §5 冒烟（重点确认 `qfPid == pid` 与 sqlite 正常关闭）。
+
+## 8. GitHub Actions 自动打包发布
+
+`.github/workflows/release.yml`：打完 tag 由 GitHub 自己出 mac + win 安装包并发 Release，
+本机不需要 Mac。
+
+### 8.1 发版
+
+```bash
+npm pkg set version=0.0.1      # 与 tag 保持一致
+git add -A && git commit -m "chore: release v0.0.1"
+git push origin dev
+
+git tag -a v0.0.1 -m "NoteFlow v0.0.1"
+git push origin v0.0.1         # ← 只有打 tag 才会发布 Release
+```
+
+推上去后 Actions 里会出现 `Release` 流水线，产出：
+
+| 平台 | runner | 产物 |
+|---|---|---|
+| macOS arm64 | `macos-latest` | `NoteFlow-<版本>-arm64.dmg` |
+| Windows x64 | `windows-latest` | `NoteFlow Setup <版本>.exe` |
+
+Release 页面附 `*.dmg` / `*.exe` / `*.blockmap` / `latest*.yml`，并自动生成 release notes。
+
+### 8.2 手动验证（不发 Release）
+
+Actions → Release → Run workflow，填 `version`，产物只留在该次运行的 Artifacts 里
+（保留 7 天）。适合验证打包链路而不想污染 tag 列表。
+
+### 8.3 流水线要点
+
+- **版本号以 tag 为准**：job `version` 去掉 `v` 前缀后 `npm pkg set version=`，
+  不依赖仓库里 package.json 手写值；发版前仍建议先本地改好并提交，避免 `git describe` 对不上。
+- **不签名**：`CSC_IDENTITY_AUTO_DISCOVERY=false`，否则 mac job 会尝试找证书。
+  mac 产物首次打开仍是 §6.1 的右键 → 打开。
+- **不改 electron-builder 配置**：mac 目标 `dmg/arm64`、win 目标 `nsis/x64` 均已在
+  `electron-builder.yml` 里声明，workflow 只是显式传一遍 `--mac dmg --arm64` /
+  `--win nsis --x64`，防止 builder 默认多打一份未配置的目标。
+- **下载源**：GitHub runner 走官方源；若改自建国内 runner，解除 workflow `env`
+  里 `ELECTRON_MIRROR` / `ELECTRON_BUILDER_BINARIES_MIRROR` 的注释。
+- `asar: false`（§3.1）在 CI 上同样成立，不需要额外处理。
+

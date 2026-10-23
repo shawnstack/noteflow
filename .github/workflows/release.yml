@@ -1,0 +1,131 @@
+name: Release
+
+# 触发方式：
+#   1) 打 tag 自动发布：git tag v0.0.1 && git push origin v0.0.1
+#   2) 手动跑（Actions → Release → Run workflow）：只产出 Actions artifact，不发 Release
+#
+# 产物：
+#   - macOS   dmg（arm64，Apple Silicon，未签名）
+#   - Windows nsis 安装包（x64）
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '手动构建的版本号（tag 触发时忽略此项）'
+        required: false
+        default: '0.0.0-dev'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  # 不做代码签名/公证：跳过证书自动探测，否则 mac job 会被签名步骤卡住
+  CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+  # GitHub runner 直连官方源最快。若换到国内自建 runner，
+  # 取消下面两行注释改用镜像（详见 docs/electron-packaging.md §6.2）。
+  # ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/
+  # ELECTRON_BUILDER_BINARIES_MIRROR: https://npmmirror.com/mirrors/electron-builder-binaries/
+
+jobs:
+  # 版本号在这里统一算一次，供打包与发布复用：
+  # tag 触发 → 去掉 v 前缀；手动触发 → 用 inputs.version
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - name: Resolve version
+        id: v
+        shell: bash
+        run: |
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            VERSION='${{ github.event.inputs.version }}'
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "resolved version: $VERSION"
+
+  build:
+    needs: version
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # macos-latest 为 arm64（Apple Silicon）runner，与目标架构一致，无需交叉编译。
+          # node-pty 的 darwin-arm64 prebuild 在 quickforge vendor 目录里随包携带。
+          - os: macos-latest
+            platform: mac
+            args: --mac dmg --arm64
+          - os: windows-latest
+            platform: win
+            args: --win nsis --x64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Set version
+        shell: bash
+        run: npm pkg set version=${{ needs.version.outputs.version }}
+
+      - name: Typecheck & build frontend
+        run: npm run build
+
+      # electron-builder 自行下载目标平台的 Electron 预编译包，
+      # 不依赖 node_modules/electron 里那份本机二进制。
+      - name: Package
+        run: npx electron-builder ${{ matrix.args }} --publish never
+
+      # 只收安装包与差分更新清单，不含 unpacked 目录
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: noteflow-${{ matrix.platform }}
+          if-no-files-found: error
+          retention-days: 7
+          path: |
+            release/*.dmg
+            release/*.exe
+            release/*.blockmap
+            release/*.yml
+
+  release:
+    needs: [version, build]
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: List artifacts
+        run: find artifacts -type f | sort
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: NoteFlow ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          files: |
+            artifacts/**/*.dmg
+            artifacts/**/*.exe
+            artifacts/**/*.blockmap
+            artifacts/**/*.yml
